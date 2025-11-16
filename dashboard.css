@@ -45,6 +45,11 @@ button {
   flex-direction: column;
   padding: 32px 24px;
   gap: 32px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -182,6 +187,8 @@ button {
   flex-direction: column;
   padding: 32px 48px;
   gap: 32px;
+  margin-left: 280px;
+  min-height: 100vh;
 }
 
 .page-hero {
