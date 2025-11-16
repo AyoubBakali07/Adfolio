@@ -38,7 +38,7 @@
         "https://www.instagram.com/*",
         "https://*.instagram.com/*"
       ],
-      "js": ["content-script.js"],
+      "js": ["contentScript.js"],
       "run_at": "document_idle"
     }
   ]

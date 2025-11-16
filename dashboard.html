@@ -4,145 +4,81 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Swipekit Lite Dashboard</title>
-    <script src="tailwind-browser.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="dashboard.css" />
   </head>
-  <body class="app-body">
-    <div class="app-container">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div class="logo">
-            <i class="fas fa-bolt"></i>
-            <span>Swipekit</span>
-            <i class="fas fa-plus"></i>
+  <body>
+    <div class="dashboard-shell">
+      <aside class="dash-sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-logo">S</div>
+          <div>
+            <strong>Swipekit</strong>
+            <p>Lite dashboard</p>
           </div>
         </div>
-        
-        <nav class="sidebar-nav">
-          <div class="nav-section">
-            <a href="#" class="nav-item active">
-              <i class="fas fa-book"></i>
-              <div class="nav-text">
-                <span>Library</span>
-                <span class="nav-subtext">All your ads in one place</span>
-              </div>
-            </a>
-            <a href="#" class="nav-item">
-              <i class="fas fa-chart-line"></i>
-              <div class="nav-text">
-                <span>Brand Tracker</span>
-                <span class="nav-subtext">Spy your competition</span>
-              </div>
-            </a>
-            <a href="#" class="nav-item">
-              <i class="fas fa-users"></i>
-              <div class="nav-text">
-                <span>Multiplayer</span>
-                <span class="nav-subtext">Browse 1M+ ads</span>
-              </div>
-            </a>
-            <a href="#" class="nav-item">
-              <i class="fas fa-robot"></i>
-              <div class="nav-text">
-                <span>AI Generations</span>
-                <span class="nav-subtext">Saved AI generations</span>
-              </div>
-            </a>
-          </div>
-
-          <div class="search-container">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" class="sidebar-search" placeholder="Search for boards">
-          </div>
-
-          <div class="nav-section">
-            <div class="nav-section-header">
-              <span>Folders</span>
-              <i class="fas fa-plus"></i>
-            </div>
-            <a href="#" class="nav-item folder-item">
-              <i class="far fa-folder"></i>
-              <span>Default</span>
-              <span class="folder-count">0</span>
-              <i class="fas fa-ellipsis-h"></i>
-            </a>
-          </div>
+        <nav class="sidebar-menu">
+          <button class="sidebar-link active">
+            <span>Library</span>
+            <small>All your ads in one place</small>
+          </button>
+          <button class="sidebar-link">
+            <span>Brand Tracker</span>
+            <small>Spy your competition</small>
+          </button>
+          <button class="sidebar-link">
+            <span>Platform Pulse</span>
+            <small>Browse 1M+ ads</small>
+          </button>
+          <button class="sidebar-link">
+            <span>AI Generations</span>
+            <small>Saved AI generations</small>
+          </button>
         </nav>
-
-        <div class="sidebar-footer">
-          <a href="#" class="nav-item">
-            <i class="fas fa-question-circle"></i>
-            <span>Helpdesk</span>
-          </a>
-          <a href="#" class="nav-item">
-            <i class="fas fa-headset"></i>
-            <span>Support</span>
-          </a>
-          <div class="credits">
-            <i class="fas fa-bolt"></i>
-            <span>AI Credits 0/30</span>
+        <div class="sidebar-folders">
+          <div class="sidebar-folders-header">
+            <span>Folders</span>
+            <button class="ghost-btn" type="button" title="Create folder">+</button>
           </div>
+          <button class="folder-row">
+            <span>Default</span>
+            <span class="folder-count">0</span>
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <button class="sidebar-footer-link">Helpdesk</button>
+          <button class="sidebar-footer-link">Support</button>
+          <p class="sidebar-credits">AI credits 0/30</p>
         </div>
       </aside>
 
-      <!-- Main Content -->
-      <div class="main-content">
-        <header class="content-header">
-          <div class="breadcrumb">
-            <span>Library</span>
-            <i class="fas fa-chevron-right"></i>
-            <span class="active">All your ads, in one place</span>
+      <main class="dash-main">
+        <header class="page-hero">
+          <div>
+            <p class="eyebrow">Library</p>
+            <h1>All your ads, in one place</h1>
           </div>
-          
-          <div class="content-actions">
-            <div class="search-bar">
-              <i class="fas fa-search"></i>
-              <input type="text" placeholder="Search">
-            </div>
-            
-            <div class="filter-buttons">
-              <button class="filter-btn">
-                <i class="fas fa-tag"></i>
-                <span>Tags</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-check-circle"></i>
-                <span>Active ads</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-mobile-alt"></i>
-                <span>Platform</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-building"></i>
-                <span>Brands</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-image"></i>
-                <span>Asset</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-sort"></i>
-                <span>Sort</span>
-              </button>
-              <button class="filter-btn">
-                <i class="fas fa-sliders-h"></i>
-                <span>Display</span>
-              </button>
-            </div>
-          </div>
+          <button class="clear-library" type="button">Clear library</button>
         </header>
 
-        <main class="app-main">
-          <section id="cardGrid" class="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            <!-- Cards will be inserted here by JavaScript -->
-          </section>
-        </main>
-      </div>
+        <section class="hero-toolbar">
+          <label class="hero-search">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 12h-.79l-.28-.27a6 6 0 10-.71.71l.27.28v.79l4.5 4.5L18 16.5l-4.5-4.5zm-5.5 0a4 4 0 110-8 4 4 0 010 8z"/></svg>
+            <input type="text" placeholder="Search" />
+          </label>
+          <div class="filter-row">
+            <button class="filter-chip" type="button">Tags</button>
+            <button class="filter-chip" type="button">Active ads</button>
+            <button class="filter-chip" type="button">Platform</button>
+            <button class="filter-chip" type="button">Brands</button>
+            <button class="filter-chip" type="button">Asset</button>
+            <button class="filter-chip" type="button">Sort</button>
+            <button class="filter-chip" type="button">Display</button>
+          </div>
+        </section>
+
+        <section id="cardGrid" class="card-grid"></section>
+      </main>
     </div>
-    
     <script src="dashboard.js"></script>
   </body>
 </html>
