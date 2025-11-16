@@ -43,9 +43,40 @@ const formatRelativeTime = (dateString) => {
   return 'Just now';
 };
 
+const formatFullDate = (dateString) => {
+  if (!dateString) return 'Unknown date';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
 const truncate = (text, limit = 120) => {
   if (!text) return '';
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+};
+
+const extractHighlights = (text, limit = 3) => {
+  if (!text) return [];
+  return text
+    .split(/\n+/)
+    .flatMap((chunk) => chunk.split(/(?<=[.!?])\s+/))
+    .map((piece) => piece.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+};
+
+const getHostname = (url) => {
+  if (!url) return 'Source unknown';
+  try {
+    const { hostname } = new URL(url);
+    return hostname.replace(/^www\./i, '');
+  } catch {
+    return 'Source unknown';
+  }
 };
 
 const applyFilters = () => {
@@ -76,7 +107,160 @@ const bindEvent = (selector, eventName, handler, { silent = false } = {}) => {
 
 const createAdCard = (item) => {
   const card = document.createElement('article');
-  card.className = 'ad-card';
+  card.className = 'ad-card ad-card--library';
+  
+  const statusRow = document.createElement('div');
+  statusRow.className = 'ad-card__status-row';
+  
+  const statusText = item.status || 'Active';
+  const statusPill = document.createElement('span');
+  statusPill.className = `status-pill ${statusText.toLowerCase().includes('active') ? 'status-pill--active' : ''}`;
+  statusPill.innerHTML = `<span class="status-dot"></span>${statusText}`;
+  
+  const savedAt = document.createElement('span');
+  savedAt.className = 'status-timestamp';
+  savedAt.textContent = `Saved ${formatRelativeTime(item.capturedAt)}`;
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'icon-btn';
+  deleteBtn.setAttribute('aria-label', 'Delete saved creative');
+  deleteBtn.innerHTML = '<i class="far fa-trash-alt"></i>';
+  deleteBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    deleteItem(item.id);
+  });
+  
+  const statusMeta = document.createElement('div');
+  statusMeta.className = 'ad-card__status-meta';
+  statusMeta.appendChild(statusPill);
+  statusMeta.appendChild(savedAt);
+  
+  statusRow.appendChild(statusMeta);
+  statusRow.appendChild(deleteBtn);
+  card.appendChild(statusRow);
+  
+  const metaGrid = document.createElement('div');
+  metaGrid.className = 'ad-card__meta-grid';
+  
+  const libraryId = item.libraryId || (item.id || '').split('-').pop() || item.id || '—';
+  const metaItems = [
+    { label: 'Library ID', value: libraryId.toString().toUpperCase() },
+    { label: 'Captured', value: formatFullDate(item.capturedAt) },
+    { label: 'Platform', value: item.platform || 'Unknown platform' }
+  ];
+  
+  metaItems.forEach(({ label, value }) => {
+    const metaItem = document.createElement('div');
+    metaItem.className = 'meta-block';
+    
+    const metaLabel = document.createElement('span');
+    metaLabel.className = 'meta-label';
+    metaLabel.textContent = label;
+    
+    const metaValue = document.createElement('span');
+    metaValue.className = 'meta-value';
+    if (label === 'Platform') {
+      const icon = document.createElement('i');
+      const platform = value.toLowerCase();
+      icon.className = platform.includes('instagram')
+        ? 'fab fa-instagram'
+        : 'fab fa-facebook';
+      metaValue.appendChild(icon);
+      const platformText = document.createElement('span');
+      platformText.textContent = value;
+      metaValue.appendChild(platformText);
+    } else {
+      metaValue.textContent = value;
+    }
+    
+    metaItem.appendChild(metaLabel);
+    metaItem.appendChild(metaValue);
+    metaGrid.appendChild(metaItem);
+  });
+  
+  card.appendChild(metaGrid);
+  
+  const actions = document.createElement('div');
+  actions.className = 'ad-card__actions';
+  
+  const adLink = document.createElement('a');
+  adLink.className = 'cta-btn cta-btn--ghost';
+  adLink.href = item.pageUrl || '#';
+  adLink.target = '_blank';
+  adLink.rel = 'noopener noreferrer';
+  adLink.innerHTML = '<i class="fas fa-external-link-alt"></i> See ad details';
+  
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'cta-btn cta-btn--primary';
+  copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy text';
+  copyBtn.disabled = !item.text;
+  copyBtn.addEventListener('click', async () => {
+    if (!item.text) return;
+    const original = copyBtn.innerHTML;
+    copyBtn.disabled = true;
+    copyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Copying...';
+    try {
+      await navigator.clipboard.writeText(item.text);
+      copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied';
+      setTimeout(() => {
+        copyBtn.innerHTML = original;
+        copyBtn.disabled = false;
+      }, 1400);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      copyBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+      setTimeout(() => {
+        copyBtn.innerHTML = original;
+        copyBtn.disabled = false;
+      }, 1800);
+    }
+  });
+  
+  actions.appendChild(adLink);
+  actions.appendChild(copyBtn);
+  card.appendChild(actions);
+  
+  const brandRow = document.createElement('div');
+  brandRow.className = 'ad-card__brand';
+  const avatar = document.createElement('div');
+  avatar.className = 'brand-avatar';
+  const brandName = item.brandName || (item.platform ? `${item.platform} Ad` : 'Saved creative');
+  avatar.textContent = brandName.charAt(0).toUpperCase();
+  
+  const brandInfo = document.createElement('div');
+  brandInfo.className = 'brand-info';
+  const brandTitle = document.createElement('div');
+  brandTitle.className = 'brand-name';
+  brandTitle.textContent = brandName;
+  const brandMeta = document.createElement('div');
+  brandMeta.className = 'brand-meta';
+  brandMeta.textContent = `Sponsored • ${getHostname(item.pageUrl)}`;
+  
+  brandInfo.appendChild(brandTitle);
+  brandInfo.appendChild(brandMeta);
+  brandRow.appendChild(avatar);
+  brandRow.appendChild(brandInfo);
+  card.appendChild(brandRow);
+  
+  if (item.text) {
+    const description = document.createElement('p');
+    description.className = 'ad-card__description';
+    description.textContent = truncate(item.text, 200);
+    card.appendChild(description);
+  }
+  
+  const highlights = extractHighlights(item.text);
+  if (highlights.length > 1) {
+    const list = document.createElement('ul');
+    list.className = 'ad-card__highlights';
+    highlights.forEach((line) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<i class="fas fa-check-circle"></i> ${line}`;
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+  }
   
   // Media section (image or video)
   const mediaContainer = document.createElement('div');
@@ -103,92 +287,21 @@ const createAdCard = (item) => {
     mediaContainer.appendChild(img);
   }
   
-  // Content section
-  const content = document.createElement('div');
-  content.className = 'ad-content';
-  
-  // Header with platform and timestamp
-  const header = document.createElement('div');
-  header.className = 'ad-header';
-  
-  const platform = document.createElement('div');
-  platform.className = 'ad-platform';
-  platform.textContent = item.platform || 'AD';
-  
-  const timestamp = document.createElement('div');
-  timestamp.className = 'ad-timestamp';
-  timestamp.textContent = formatRelativeTime(item.capturedAt);
-  
-  header.appendChild(platform);
-  header.appendChild(timestamp);
-  
-  // Brand and title
-  const details = document.createElement('div');
-  details.className = 'ad-details';
-  
-  if (item.brandName) {
-    const brand = document.createElement('div');
-    brand.className = 'ad-brand';
-    brand.textContent = item.brandName;
-    details.appendChild(brand);
-  }
-  
-  if (item.text) {
-    const description = document.createElement('div');
-    description.className = 'ad-description';
-    description.textContent = truncate(item.text);
-    details.appendChild(description);
-  }
-  
-  // Meta information
-  const meta = document.createElement('div');
-  meta.className = 'ad-meta';
-  
-  if (item.platform) {
-    const platformMeta = document.createElement('div');
-    platformMeta.className = 'meta-item';
-    platformMeta.innerHTML = `<i class="fas fa-mobile-alt"></i> ${item.platform}`;
-    meta.appendChild(platformMeta);
-  }
-  
-  if (item.duration) {
-    const duration = document.createElement('div');
-    duration.className = 'meta-item';
-    duration.innerHTML = `<i class="far fa-clock"></i> ${item.duration}`;
-    meta.appendChild(duration);
-  }
-  
-  // Action buttons
-  const actions = document.createElement('div');
-  actions.className = 'ad-actions';
-  
-  const viewSource = document.createElement('a');
-  viewSource.className = 'btn btn-outline';
-  viewSource.href = item.pageUrl || '#';
-  viewSource.target = '_blank';
-  viewSource.rel = 'noopener noreferrer';
-  viewSource.innerHTML = '<i class="fas fa-external-link-alt"></i> View source';
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'btn btn-danger';
-  deleteBtn.innerHTML = '<i class="far fa-trash-alt"></i>';
-  deleteBtn.title = 'Delete';
-  deleteBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    deleteItem(item.id);
-  });
-  
-  actions.appendChild(viewSource);
-  actions.appendChild(deleteBtn);
-  
-  // Assemble the card
-  content.appendChild(header);
-  content.appendChild(details);
-  content.appendChild(meta);
-  content.appendChild(actions);
-  
   card.appendChild(mediaContainer);
-  card.appendChild(content);
+  
+  const footer = document.createElement('div');
+  footer.className = 'ad-card__footer';
+  const domain = document.createElement('div');
+  domain.className = 'ad-card__domain';
+  domain.textContent = getHostname(item.pageUrl);
+  
+  const platformTag = document.createElement('span');
+  platformTag.className = 'platform-pill';
+  platformTag.textContent = item.platform || 'Unknown';
+  
+  footer.appendChild(domain);
+  footer.appendChild(platformTag);
+  card.appendChild(footer);
   
   return card;
 };
@@ -214,7 +327,8 @@ const renderItems = () => {
   filtered.forEach(item => {
     const card = createAdCard(item);
     container.appendChild(card);
-  });};
+  });
+};
 
 // Fetch items from storage
 const fetchItems = async () => {
