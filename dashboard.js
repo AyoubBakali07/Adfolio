@@ -112,6 +112,50 @@ const getHostname = (url) => {
   }
 };
 
+const AD_COPY_NOISE = [
+  /^activelibrary id/i,
+  /^started running/i,
+  /^platforms/i,
+  /^open dropdown/i,
+  /^see ad details/i,
+  /^sponsored$/i,
+  /^facebook ad library/i,
+  /^ad library\b/i,
+  /^landing page\b/i,
+  /^saved \d+/i,
+  /^show more$/i,
+  /^show less$/i
+];
+
+const cleanAdCopy = (text) => {
+  if (!text) return '';
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
+  if (lines.length) {
+    return lines.join('\n').trim();
+  }
+  const markers = ['see ad details', 'sponsored'];
+  const lower = normalized.toLowerCase();
+  for (const marker of markers) {
+    const index = lower.indexOf(marker);
+    if (index !== -1) {
+      const slice = normalized.slice(index + marker.length).trim();
+      if (slice) return slice;
+    }
+  }
+  return normalized.trim();
+};
+
+const getAdCopy = (item) => {
+  if (item?.extra?.adCopy) return item.extra.adCopy;
+  const cleaned = cleanAdCopy(item?.text || '');
+  return cleaned || item?.text || '';
+};
+
 const isValidRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 5;
 
 const getStoredAspectRatio = (item) => {
@@ -146,7 +190,7 @@ const applyFilters = () => {
   if (!searchQuery) return [...items];
   const term = searchQuery.toLowerCase();
   return items.filter((item) => {
-    const haystack = [item.text, item.platform, item.pageUrl]
+    const haystack = [getAdCopy(item), item.platform, item.pageUrl]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -394,11 +438,12 @@ const createAdCard = (item) => {
   meta.appendChild(metaText);
   meta.appendChild(deleteBtn);
 
+  const adCopy = getAdCopy(item);
   const title = document.createElement('h3');
   title.className = 'ad-card-title';
-  title.textContent = extractTitle(item.text);
+  title.textContent = extractTitle(adCopy);
 
-  const description = createDescriptionBlock(extractDescription(item.text));
+  const description = createDescriptionBlock(extractDescription(adCopy));
 
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';

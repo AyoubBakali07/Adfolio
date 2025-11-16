@@ -234,18 +234,62 @@
   const getCardText = (card) => {
     const clone = card.cloneNode(true);
     clone.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-    return sanitize(clone.innerText || '');
+    const text = clone.innerText || '';
+    return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n').trim();
+  };
+
+  const AD_COPY_NOISE = [
+    /^activelibrary id/i,
+    /^started running/i,
+    /^platforms/i,
+    /^open dropdown/i,
+    /^see ad details/i,
+    /^sponsored$/i,
+    /^facebook ad library/i,
+    /^ad library\b/i,
+    /^landing page\b/i,
+    /^saved \d+/i,
+    /^show more$/i,
+    /^show less$/i
+  ];
+
+  const cleanAdCopyText = (text) => {
+    if (!text) return '';
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
+    const lines = normalized
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
+    if (lines.length) return lines.join('\n').trim();
+    const markers = ['see ad details', 'sponsored'];
+    const lower = normalized.toLowerCase();
+    for (const marker of markers) {
+      const index = lower.indexOf(marker);
+      if (index !== -1) {
+        const slice = normalized.slice(index + marker.length).trim();
+        if (slice) return slice;
+      }
+    }
+    return normalized.trim();
+  };
+
+  const getAdCopyData = (card) => {
+    const rawText = getCardText(card);
+    const adCopy = cleanAdCopyText(rawText) || rawText;
+    return { rawText, adCopy };
   };
 
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
+    const { rawText, adCopy } = getAdCopyData(card);
     const aspectRatio = detectAspectRatio(card);
     const payload = {
       id: createId(),
       platform: detectPlatform(),
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
-      text: getCardText(card),
+      text: adCopy,
       imageUrls: collectImages(card),
       videoUrls: collectVideos(card),
       brandName,
@@ -255,6 +299,8 @@
     if (aspectRatio && Number.isFinite(aspectRatio)) {
       payload.extra.aspectRatio = aspectRatio;
     }
+    payload.extra.rawText = rawText;
+    payload.extra.adCopy = adCopy;
     return payload;
   };
 
