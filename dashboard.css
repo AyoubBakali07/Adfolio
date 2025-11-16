@@ -414,6 +414,51 @@ button {
   line-height: 1.5;
 }
 
+.ad-card-link-preview {
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: var(--surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ad-card-link-domain {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.ad-card-link-headline {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ad-card-link-description {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.ad-card-link-cta {
+  margin-top: 8px;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 20px;
+  background: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ad-card-link-cta:hover {
+  background: #f1f0eb;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
 .ad-card-toggle {
   margin-top: 8px;
   border: none;

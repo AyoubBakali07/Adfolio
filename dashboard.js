@@ -128,6 +128,8 @@ const AD_COPY_NOISE = [
 ];
 const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
 const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
+const DOMAIN_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+const CTA_IGNORE = [/show more/i, /show less/i, /sponsored/i];
 
 const normalizeLineKey = (line) =>
   line
@@ -178,6 +180,52 @@ const getAdCopy = (item) => {
   if (item?.extra?.adCopy) return item.extra.adCopy;
   const cleaned = cleanAdCopy(item?.text || '');
   return cleaned || item?.text || '';
+};
+
+const getStructuredLines = (text) =>
+  text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
+
+const removePrimaryLines = (lines, primaryText) => {
+  if (!primaryText) return lines;
+  const keys = new Set(primaryText.split('\n').map((line) => normalizeLineKey(line)));
+  return lines.filter((line) => !keys.has(normalizeLineKey(line)));
+};
+
+const deriveLinkPreviewFromText = (text, primaryText) => {
+  if (!text) return {};
+  const lines = removePrimaryLines(getStructuredLines(text), primaryText);
+  const domainIndex = lines.findIndex((line) => DOMAIN_PATTERN.test(line.replace(/^https?:\/\//i, '')));
+  if (domainIndex === -1) return {};
+  const domain = lines[domainIndex];
+  const headline = lines[domainIndex + 1] || '';
+  const descriptionLines = lines
+    .slice(domainIndex + 2)
+    .filter((line) => !CTA_IGNORE.some((pattern) => pattern.test(line)));
+  const description = descriptionLines.join(' ');
+  return {
+    domain,
+    headline,
+    description
+  };
+};
+
+const getLinkPreviewData = (item, primaryText) => {
+  const extra = item?.extra || {};
+  const derived = (!extra.domain || !extra.headline || !extra.linkDescription) && extra.rawText
+    ? deriveLinkPreviewFromText(extra.rawText, primaryText)
+    : {};
+  return {
+    domain: extra.domain || derived.domain || '',
+    headline: extra.headline || derived.headline || '',
+    description: extra.linkDescription || derived.description || '',
+    ctaLabel: extra.ctaLabel || '',
+    linkUrl: extra.linkUrl || item.pageUrl || ''
+  };
 };
 
 const isValidRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 5;
@@ -293,6 +341,49 @@ const createDescriptionBlock = (text) => {
       toggle.textContent = expanded ? 'Show less' : 'Show more';
     });
     container.appendChild(toggle);
+  }
+
+  return container;
+};
+
+const createLinkPreview = (item, primaryText) => {
+  const { domain, headline, description, ctaLabel, linkUrl } = getLinkPreviewData(item, primaryText);
+  if (!domain && !headline && !description && !ctaLabel) return null;
+  const container = document.createElement('div');
+  container.className = 'ad-card-link-preview';
+
+  if (domain) {
+    const domainEl = document.createElement('p');
+    domainEl.className = 'ad-card-link-domain';
+    domainEl.textContent = domain.toUpperCase();
+    container.appendChild(domainEl);
+  }
+
+  if (headline) {
+    const headlineEl = document.createElement('p');
+    headlineEl.className = 'ad-card-link-headline';
+    headlineEl.textContent = headline;
+    container.appendChild(headlineEl);
+  }
+
+  if (description) {
+    const descEl = document.createElement('p');
+    descEl.className = 'ad-card-link-description';
+    descEl.textContent = description;
+    container.appendChild(descEl);
+  }
+
+  if (ctaLabel) {
+    const ctaBtn = document.createElement('button');
+    ctaBtn.type = 'button';
+    ctaBtn.className = 'ad-card-link-cta';
+    ctaBtn.textContent = ctaLabel;
+    ctaBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const target = linkUrl || item.pageUrl;
+      if (target) window.open(target, '_blank', 'noopener');
+    });
+    container.appendChild(ctaBtn);
   }
 
   return container;
@@ -434,6 +525,7 @@ const createAdCard = (item) => {
 
   const adCopy = getAdCopy(item);
   const description = createDescriptionBlock(adCopy);
+  const linkPreview = createLinkPreview(item, adCopy);
 
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
@@ -463,6 +555,7 @@ const createAdCard = (item) => {
 
   body.appendChild(brandRow);
   body.appendChild(description);
+  if (linkPreview) body.appendChild(linkPreview);
   body.appendChild(tags);
   body.appendChild(footer);
 

@@ -254,6 +254,8 @@
   ];
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
+  const DOMAIN_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+  const CTA_IGNORE = [/show more/i, /show less/i, /sponsored/i];
 
   const normalizeLineKey = (line) =>
     line
@@ -304,9 +306,62 @@
     return { rawText, adCopy };
   };
 
+  const getCandidateLines = (text) =>
+    text
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
+
+  const removePrimaryLines = (lines, primaryText) => {
+    if (!primaryText) return lines;
+    const keys = new Set(primaryText.split('\n').map((line) => normalizeLineKey(line)));
+    return lines.filter((line) => !keys.has(normalizeLineKey(line)));
+  };
+
+  const findCtaLabel = (card) => {
+    const buttons = Array.from(card.querySelectorAll('a[role="button"], button')).filter(
+      (node) => !node.closest('.swipekit-save-btn-wrapper')
+    );
+    for (const node of buttons) {
+      const label = sanitize(node.textContent || '');
+      if (!label) continue;
+      if (CTA_IGNORE.some((pattern) => pattern.test(label))) continue;
+      return label;
+    }
+    return '';
+  };
+
+  const extractStructuredFields = (card, rawText, primaryText) => {
+    const ctaLabel = findCtaLabel(card);
+    const ctaKey = ctaLabel ? normalizeLineKey(ctaLabel) : '';
+    const lines = removePrimaryLines(getCandidateLines(rawText), primaryText).filter((line) => {
+      if (!ctaKey) return true;
+      return normalizeLineKey(line) !== ctaKey;
+    });
+    const domainIndex = lines.findIndex((line) => DOMAIN_PATTERN.test(line.replace(/^https?:\/\//i, '')));
+    if (domainIndex === -1) {
+      return { ctaLabel };
+    }
+    const domain = lines[domainIndex];
+    const headline = lines[domainIndex + 1] || '';
+    const descriptionLines = lines
+      .slice(domainIndex + 2)
+      .filter((line) => !CTA_IGNORE.some((pattern) => pattern.test(line)));
+    const description = descriptionLines.join(' ');
+    return {
+      domain,
+      headline,
+      description,
+      ctaLabel
+    };
+  };
+
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
     const { rawText, adCopy } = getAdCopyData(card);
+    const structured = extractStructuredFields(card, rawText, adCopy);
     const aspectRatio = detectAspectRatio(card);
     const payload = {
       id: createId(),
@@ -325,6 +380,10 @@
     }
     payload.extra.rawText = rawText;
     payload.extra.adCopy = adCopy;
+    payload.extra.domain = structured.domain || '';
+    payload.extra.headline = structured.headline || '';
+    payload.extra.linkDescription = structured.description || '';
+    payload.extra.ctaLabel = structured.ctaLabel || '';
     return payload;
   };
 
