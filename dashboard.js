@@ -418,20 +418,6 @@ const createAdCard = (item) => {
 
   const brandHeader = createBrandHeader(item);
 
-  const meta = document.createElement('div');
-  meta.className = 'ad-card-meta';
-
-  const metaText = document.createElement('div');
-  const label = document.createElement('p');
-  label.className = 'ad-card-label';
-  label.textContent = (item.platform || 'Ad Library').replace(/-/g, ' ').toUpperCase();
-  const time = document.createElement('p');
-  time.className = 'ad-card-time';
-  const absolute = formatFullDate(item.capturedAt);
-  time.textContent = absolute || '';
-  metaText.appendChild(label);
-  metaText.appendChild(time);
-
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'ad-card-delete';
   deleteBtn.type = 'button';
@@ -441,8 +427,10 @@ const createAdCard = (item) => {
     deleteItem(item.id);
   });
 
-  meta.appendChild(metaText);
-  meta.appendChild(deleteBtn);
+  const brandRow = document.createElement('div');
+  brandRow.className = 'ad-card-brand-row';
+  brandRow.appendChild(brandHeader);
+  brandRow.appendChild(deleteBtn);
 
   const adCopy = getAdCopy(item);
   const description = createDescriptionBlock(adCopy);
@@ -473,8 +461,7 @@ const createAdCard = (item) => {
 
   footer.appendChild(saveButton);
 
-  body.appendChild(brandHeader);
-  body.appendChild(meta);
+  body.appendChild(brandRow);
   body.appendChild(description);
   body.appendChild(tags);
   body.appendChild(footer);

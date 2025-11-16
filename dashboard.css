@@ -338,6 +338,13 @@ button {
   flex: 1;
 }
 
+.ad-card-brand-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
 .ad-card-brand {
   display: flex;
   align-items: center;
@@ -376,24 +383,6 @@ button {
 
 .ad-card-brand-time {
   font-size: 0.82rem;
-  color: var(--muted);
-}
-
-.ad-card-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ad-card-label {
-  font-size: 0.85rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-}
-
-.ad-card-time {
-  font-size: 0.85rem;
   color: var(--muted);
 }
 
