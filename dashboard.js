@@ -15,6 +15,59 @@ const sendMessage = (type, payload = {}) =>
 
 let items = [];
 let searchQuery = '';
+const pendingDeletions = new Map();
+
+const ensureToastHost = () => {
+  let host = document.querySelector('.toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  return host;
+};
+
+const showToast = ({ message, undoLabel, onUndo, type = 'default', duration = 4000 }) => {
+  const host = ensureToastHost();
+  const toast = document.createElement('div');
+  toast.className = `toast ${type === 'error' ? 'error' : ''}`.trim();
+
+  const text = document.createElement('span');
+  text.textContent = message;
+  toast.appendChild(text);
+
+  let timeoutId;
+
+  if (undoLabel && typeof onUndo === 'function') {
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'toast-undo';
+    undoBtn.textContent = undoLabel;
+    undoBtn.addEventListener('click', () => {
+      onUndo();
+      clearTimeout(timeoutId);
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 200);
+    });
+    toast.appendChild(undoBtn);
+  }
+
+  host.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visible'));
+
+  timeoutId = setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 200);
+  }, duration);
+
+  return {
+    dismiss: () => {
+      clearTimeout(timeoutId);
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 200);
+    }
+  };
+};
 
 const formatRelativeTime = (dateString) => {
   if (!dateString) return 'moments ago';
@@ -211,16 +264,54 @@ const handleCardSave = (item) => {
   }
 };
 
-const deleteItem = async (id) => {
-  if (!id || !confirm('Delete this saved ad?')) return;
+const finalizeDelete = async (id) => {
+  const pending = pendingDeletions.get(id);
+  if (!pending) return;
+  pendingDeletions.delete(id);
+  clearTimeout(pending.timer);
+  pending.toastDismiss();
   try {
     await sendMessage('DELETE_AD_ITEM', { id });
-    items = items.filter((entry) => entry.id !== id);
-    renderItems();
   } catch (error) {
     console.error('Failed to delete item:', error);
-    alert('Could not delete this ad. Please try again.');
+    const insertIndex = Math.min(pending.index, items.length);
+    items.splice(insertIndex, 0, pending.item);
+    renderItems();
+    showToast({ message: 'Failed to delete ad. Restored.', type: 'error', duration: 3000 });
   }
+};
+
+const undoDelete = (id) => {
+  const pending = pendingDeletions.get(id);
+  if (!pending) return;
+  pendingDeletions.delete(id);
+  clearTimeout(pending.timer);
+  pending.toastDismiss();
+  const insertIndex = Math.min(pending.index, items.length);
+  items.splice(insertIndex, 0, pending.item);
+  renderItems();
+};
+
+const deleteItem = (id) => {
+  if (!id) return;
+  const index = items.findIndex((entry) => entry.id === id);
+  if (index === -1) return;
+  const [item] = items.splice(index, 1);
+  renderItems();
+
+  const toastRef = showToast({
+    message: `${getBrandName(item)} removed`,
+    undoLabel: 'Undo',
+    onUndo: () => undoDelete(id)
+  });
+
+  const timer = setTimeout(() => finalizeDelete(id), 4000);
+  pendingDeletions.set(id, {
+    item,
+    index,
+    timer,
+    toastDismiss: toastRef.dismiss
+  });
 };
 
 const createAdCard = (item) => {
