@@ -273,16 +273,16 @@ button {
 }
 
 .card-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
+  column-width: 320px;
+  column-gap: 24px;
   padding-bottom: 32px;
-  align-items: flex-start;
 }
 
 .card-grid > * {
-  flex: 1 1 320px;
-  min-width: 260px;
+  break-inside: avoid;
+  margin-bottom: 24px;
+  width: 100%;
+  display: inline-block;
 }
 
 .ad-card {
