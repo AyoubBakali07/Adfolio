@@ -103,7 +103,7 @@
     }
   };
 
-  const collectImages = (card) => {
+  const getImageCandidates = (card) => {
     const candidates = [];
     card.querySelectorAll('img').forEach((img) => {
       const source = normalizeUrl(img.currentSrc || img.src);
@@ -124,6 +124,12 @@
     });
 
     const prioritized = (large.length ? large : candidates).sort((a, b) => b.area - a.area);
+    return prioritized;
+  };
+
+  const collectImages = (card) => {
+    const prioritized = getImageCandidates(card);
+    if (!prioritized.length) return [];
     const seen = new Set();
     return prioritized
       .map(({ source }) => source)
@@ -186,17 +192,41 @@
     return { brandName, brandLogo };
   };
 
+  const getVideoCandidates = (card) => {
+    const candidates = [];
+    card.querySelectorAll('video').forEach((video) => {
+      const rect = video.getBoundingClientRect();
+      const width = Math.round(video.videoWidth || rect.width || video.clientWidth || 0);
+      const height = Math.round(video.videoHeight || rect.height || video.clientHeight || 0);
+      const area = width && height ? width * height : 0;
+      const urls = new Set();
+      [video.currentSrc, video.src].forEach((value) => {
+        const normalized = normalizeUrl(value);
+        if (normalized) urls.add(normalized);
+      });
+      video.querySelectorAll('source').forEach((source) => {
+        const normalized = normalizeUrl(source.src);
+        if (normalized) urls.add(normalized);
+      });
+      if (urls.size) candidates.push({ urls: Array.from(urls), width, height, area });
+    });
+    return candidates.sort((a, b) => b.area - a.area);
+  };
+
   const collectVideos = (card) => {
     const urls = new Set();
-    card.querySelectorAll('video').forEach((video) => {
-      const candidates = [video.currentSrc, video.src];
-      video.querySelectorAll('source').forEach((source) => candidates.push(source.src));
-      candidates.forEach((candidate) => {
-        const source = normalizeUrl(candidate);
-        if (source) urls.add(source);
-      });
+    getVideoCandidates(card).forEach(({ urls: videoUrls }) => {
+      videoUrls.forEach((url) => urls.add(url));
     });
     return Array.from(urls);
+  };
+
+  const detectAspectRatio = (card) => {
+    const firstVideo = getVideoCandidates(card).find(({ width, height }) => width > 0 && height > 0);
+    if (firstVideo) return Number((firstVideo.width / firstVideo.height).toFixed(4));
+    const firstImage = getImageCandidates(card).find(({ width, height }) => width > 0 && height > 0);
+    if (firstImage) return Number((firstImage.width / firstImage.height).toFixed(4));
+    return null;
   };
 
   const sanitize = (text) => text.replace(/\s+/g, ' ').trim();
@@ -209,7 +239,8 @@
 
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
-    return {
+    const aspectRatio = detectAspectRatio(card);
+    const payload = {
       id: createId(),
       platform: detectPlatform(),
       capturedAt: new Date().toISOString(),
@@ -221,6 +252,10 @@
       brandLogo,
       extra: {}
     };
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      payload.extra.aspectRatio = aspectRatio;
+    }
+    return payload;
   };
 
   const showToast = (message, isError = false) => {

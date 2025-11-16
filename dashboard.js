@@ -112,6 +112,36 @@ const getHostname = (url) => {
   }
 };
 
+const isValidRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 5;
+
+const getStoredAspectRatio = (item) => {
+  const ratio = item?.extra?.aspectRatio;
+  return isValidRatio(ratio) ? ratio : null;
+};
+
+const applyAspectRatio = (wrapper, ratio) => {
+  if (isValidRatio(ratio)) {
+    wrapper.style.setProperty('--media-aspect-ratio', ratio);
+  } else {
+    wrapper.style.removeProperty('--media-aspect-ratio');
+  }
+};
+
+const watchMediaForAspectRatio = (media, wrapper) => {
+  const update = () => {
+    const width = media.videoWidth || media.naturalWidth || media.clientWidth || media.offsetWidth || 0;
+    const height = media.videoHeight || media.naturalHeight || media.clientHeight || media.offsetHeight || 0;
+    if (width > 0 && height > 0) {
+      applyAspectRatio(wrapper, Number((width / height).toFixed(4)));
+    }
+  };
+  if (media.tagName === 'VIDEO') {
+    media.addEventListener('loadedmetadata', update, { once: true });
+  } else {
+    media.addEventListener('load', update, { once: true });
+  }
+};
+
 const applyFilters = () => {
   if (!searchQuery) return [...items];
   const term = searchQuery.toLowerCase();
@@ -137,21 +167,25 @@ const bindEvent = (selector, eventName, handler, { silent = false } = {}) => {
 const createMediaElement = (item) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'ad-card-media';
+  const storedRatio = getStoredAspectRatio(item);
+  if (storedRatio) applyAspectRatio(wrapper, storedRatio);
   const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
   const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
 
   if (videoUrl) {
     const video = document.createElement('video');
-    video.src = videoUrl;
-    video.controls = true;
     video.muted = true;
     video.playsInline = true;
+    video.controls = true;
+    if (!storedRatio) watchMediaForAspectRatio(video, wrapper);
+    video.src = videoUrl;
     wrapper.appendChild(video);
     return wrapper;
   }
 
   if (imageUrl) {
     const image = document.createElement('img');
+    if (!storedRatio) watchMediaForAspectRatio(image, wrapper);
     image.src = imageUrl;
     image.alt = 'Ad creative';
     wrapper.appendChild(image);
