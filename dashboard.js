@@ -62,6 +62,18 @@ const applyFilters = () => {
   });
 };
 
+const bindEvent = (selector, eventName, handler, { silent = false } = {}) => {
+  const element = document.querySelector(selector);
+  if (!element) {
+    if (!silent) {
+      console.warn(`Swipekit dashboard: element "${selector}" not found when binding ${eventName}`);
+    }
+    return null;
+  }
+  element.addEventListener(eventName, handler);
+  return element;
+};
+
 const createAdCard = (item) => {
   const card = document.createElement('article');
   card.className = 'ad-card';
@@ -257,19 +269,13 @@ const clearAllItems = async () => {
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
   // Search functionality
-  const searchInput = document.querySelector('.search-bar input');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      searchQuery = e.target.value.trim().toLowerCase();
-      renderItems();
-    });
-  }
+  bindEvent('.search-bar input', 'input', (e) => {
+    searchQuery = e.target.value.trim().toLowerCase();
+    renderItems();
+  });
   
   // Clear all button
-  const clearAllBtn = document.querySelector('.clear-all');
-  if (clearAllBtn) {
-    clearAllBtn.addEventListener('click', clearAllItems);
-  }
+  bindEvent('.clear-all', 'click', clearAllItems, { silent: true });
   
   // Fetch initial data
   fetchItems();
@@ -283,13 +289,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Toggle sidebar on mobile
-  const sidebarToggle = document.querySelector('.sidebar-toggle');
   const sidebar = document.querySelector('.sidebar');
-  if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-    });
-  }
+  bindEvent('.sidebar-toggle', 'click', () => {
+    sidebar?.classList.toggle('open');
+  }, { silent: true });
 });
 
 // Handle window resize for responsive behavior
