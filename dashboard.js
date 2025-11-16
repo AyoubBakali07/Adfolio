@@ -79,6 +79,16 @@ const getHostname = (url) => {
   }
 };
 
+const formatDayDiff = (dateString) => {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
+  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day';
+  return `${days} days`;
+};
+
 const applyFilters = () => {
   if (!searchQuery) return [...items];
   const normalized = searchQuery.toLowerCase();
@@ -110,291 +120,257 @@ const setClasses = (element, classes) => {
   return element;
 };
 
+
 const createAdCard = (item) => {
   const card = document.createElement('article');
   setClasses(card, [
-    'flex',
-    'flex-col',
-    'gap-5',
+    'w-full',
+    'bg-white',
     'rounded-2xl',
     'border',
     'border-gray-200',
-    'bg-white',
-    'shadow-xl'
+    'shadow-lg',
+    'overflow-hidden',
+    'font-sans',
+    'flex',
+    'flex-col'
   ]);
   
-  const statusRow = document.createElement('div');
-  setClasses(statusRow, ['flex', 'items-center', 'justify-between', 'px-6', 'pt-6']);
+  const header = document.createElement('div');
+  setClasses(header, ['flex', 'items-center', 'justify-between', 'p-4', 'pb-2']);
   
-  const statusText = item.status || 'Active';
-  const statusPill = document.createElement('span');
-  const isActive = statusText.toLowerCase().includes('active');
-  setClasses(statusPill, [
-    'inline-flex',
-    'items-center',
-    'gap-2',
-    'text-xs',
-    'font-semibold',
-    'px-3',
-    'py-1',
+  const headerLeft = document.createElement('div');
+  setClasses(headerLeft, ['flex', 'items-center', 'gap-3']);
+  const avatar = document.createElement('div');
+  setClasses(avatar, [
+    'w-10',
+    'h-10',
     'rounded-full',
-    isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-  ]);
-  const statusDot = document.createElement('span');
-  setClasses(statusDot, ['w-2', 'h-2', 'rounded-full', 'bg-current']);
-  statusPill.appendChild(statusDot);
-  statusPill.append(statusText);
-  
-  const savedAt = document.createElement('span');
-  setClasses(savedAt, ['text-xs', 'text-gray-500']);
-  savedAt.textContent = `Saved ${formatRelativeTime(item.capturedAt)}`;
-  
-  const deleteBtn = document.createElement('button');
-  setClasses(deleteBtn, ['text-gray-400', 'hover:text-red-500', 'transition-colors', 'text-lg']);
-  deleteBtn.setAttribute('aria-label', 'Delete saved creative');
-  deleteBtn.innerHTML = '<i class="far fa-trash-alt"></i>';
-  deleteBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    deleteItem(item.id);
-  });
-  
-  const statusMeta = document.createElement('div');
-  setClasses(statusMeta, ['flex', 'flex-col', 'gap-1']);
-  statusMeta.appendChild(statusPill);
-  statusMeta.appendChild(savedAt);
-  
-  statusRow.appendChild(statusMeta);
-  statusRow.appendChild(deleteBtn);
-  card.appendChild(statusRow);
-  
-  const metaGrid = document.createElement('div');
-  setClasses(metaGrid, ['grid', 'grid-cols-1', 'sm:grid-cols-3', 'gap-4', 'px-6']);
-  
-  const libraryId = item.libraryId || (item.id || '').split('-').pop() || item.id || '—';
-  const metaItems = [
-    { label: 'Library ID', value: libraryId.toString().toUpperCase() },
-    { label: 'Captured', value: formatFullDate(item.capturedAt) },
-    { label: 'Platform', value: item.platform || 'Unknown platform' }
-  ];
-  
-  metaItems.forEach(({ label, value }) => {
-    const metaItem = document.createElement('div');
-    setClasses(metaItem, ['flex', 'flex-col', 'gap-1']);
-    
-    const metaLabel = document.createElement('span');
-    setClasses(metaLabel, ['text-[0.65rem]', 'uppercase', 'tracking-[0.3em]', 'text-gray-400']);
-    metaLabel.textContent = label;
-    
-    const metaValue = document.createElement('span');
-    setClasses(metaValue, ['text-sm', 'font-semibold', 'text-gray-800', 'inline-flex', 'items-center', 'gap-2']);
-    if (label === 'Platform') {
-      const icon = document.createElement('i');
-      const platform = value.toLowerCase();
-      icon.className = platform.includes('instagram')
-        ? 'fab fa-instagram text-indigo-500'
-        : 'fab fa-facebook text-indigo-500';
-      metaValue.appendChild(icon);
-      const platformText = document.createElement('span');
-      platformText.textContent = value;
-      metaValue.appendChild(platformText);
-    } else {
-      metaValue.textContent = value;
-    }
-    
-    metaItem.appendChild(metaLabel);
-    metaItem.appendChild(metaValue);
-    metaGrid.appendChild(metaItem);
-  });
-  
-  card.appendChild(metaGrid);
-  
-  const actions = document.createElement('div');
-  setClasses(actions, ['flex', 'flex-col', 'sm:flex-row', 'gap-3', 'px-6']);
-  
-  const adLink = document.createElement('a');
-  setClasses(adLink, [
-    'flex-1',
-    'inline-flex',
+    'bg-gray-900',
+    'text-white',
+    'flex',
     'items-center',
     'justify-center',
-    'gap-2',
-    'rounded-full',
-    'border',
-    'border-gray-200',
-    'text-gray-900',
-    'font-semibold',
-    'py-2.5',
-    'px-4',
-    'hover:border-gray-300',
-    'transition-colors'
+    'font-bold',
+    'text-sm'
   ]);
-  adLink.href = item.pageUrl || '#';
-  adLink.target = '_blank';
-  adLink.rel = 'noopener noreferrer';
-  adLink.innerHTML = '<i class="fas fa-external-link-alt"></i> See ad details';
+  const brandName = item.brandName || (item.platform ? `${item.platform} Ad` : 'Saved creative');
+  avatar.textContent = brandName.slice(0, 2).padEnd(2, ' ').trim() || 'AD';
+  
+  const headerInfo = document.createElement('div');
+  const title = document.createElement('div');
+  setClasses(title, ['text-[15px]', 'font-semibold', 'text-gray-900']);
+  title.textContent = brandName;
+  const subtitle = document.createElement('div');
+  setClasses(subtitle, ['text-xs', 'text-gray-500']);
+  subtitle.textContent = `Saved ${formatRelativeTime(item.capturedAt)}`;
+  headerInfo.appendChild(title);
+  headerInfo.appendChild(subtitle);
+  
+  headerLeft.appendChild(avatar);
+  headerLeft.appendChild(headerInfo);
+  
+  const headerActions = document.createElement('div');
+  setClasses(headerActions, ['flex', 'items-center', 'gap-3', 'text-gray-500', 'text-lg']);
   
   const copyBtn = document.createElement('button');
   copyBtn.type = 'button';
-  setClasses(copyBtn, [
-    'flex-1',
-    'inline-flex',
-    'items-center',
-    'justify-center',
-    'gap-2',
-    'rounded-full',
-    'bg-gradient-to-r',
-    'from-indigo-500',
-    'to-indigo-600',
-    'text-white',
-    'font-semibold',
-    'py-2.5',
-    'px-4',
-    'shadow-lg',
-    'hover:from-indigo-600',
-    'hover:to-indigo-700',
-    'transition-colors',
-    'disabled:opacity-60',
-    'disabled:cursor-not-allowed'
-  ]);
-  copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy text';
+  setClasses(copyBtn, ['hover:text-gray-900', 'transition-colors', 'disabled:opacity-40']);
+  copyBtn.innerHTML = '<i class="far fa-copy"></i>';
+  copyBtn.title = 'Copy text';
   copyBtn.disabled = !item.text;
   copyBtn.addEventListener('click', async () => {
     if (!item.text) return;
     const original = copyBtn.innerHTML;
+    copyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     copyBtn.disabled = true;
-    copyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Copying...';
     try {
       await navigator.clipboard.writeText(item.text);
-      copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied';
+      copyBtn.innerHTML = '<i class="fas fa-check"></i>';
       setTimeout(() => {
         copyBtn.innerHTML = original;
         copyBtn.disabled = false;
-      }, 1400);
+      }, 1200);
     } catch (err) {
       console.error('Failed to copy:', err);
-      copyBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+      copyBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
       setTimeout(() => {
         copyBtn.innerHTML = original;
         copyBtn.disabled = false;
-      }, 1800);
+      }, 1500);
     }
   });
   
-  actions.appendChild(adLink);
-  actions.appendChild(copyBtn);
-  card.appendChild(actions);
-  
-  const brandRow = document.createElement('div');
-  setClasses(brandRow, ['flex', 'items-center', 'gap-4', 'px-6']);
-  const avatar = document.createElement('div');
-  setClasses(avatar, [
-    'w-12',
-    'h-12',
-    'rounded-xl',
-    'bg-indigo-100',
-    'text-indigo-600',
-    'flex',
-    'items-center',
-    'justify-center',
-    'font-semibold',
-    'text-lg',
-    'uppercase'
-  ]);
-  const brandName = item.brandName || (item.platform ? `${item.platform} Ad` : 'Saved creative');
-  avatar.textContent = brandName.charAt(0).toUpperCase();
-  
-  const brandInfo = document.createElement('div');
-  setClasses(brandInfo, ['flex', 'flex-col', 'gap-1']);
-  const brandTitle = document.createElement('div');
-  setClasses(brandTitle, ['font-semibold', 'text-gray-900']);
-  brandTitle.textContent = brandName;
-  const brandMeta = document.createElement('div');
-  setClasses(brandMeta, ['text-xs', 'text-gray-500', 'uppercase', 'tracking-widest']);
-  brandMeta.textContent = `Sponsored • ${getHostname(item.pageUrl)}`;
-  
-  brandInfo.appendChild(brandTitle);
-  brandInfo.appendChild(brandMeta);
-  brandRow.appendChild(avatar);
-  brandRow.appendChild(brandInfo);
-  card.appendChild(brandRow);
-  
-  if (item.text) {
-    const description = document.createElement('p');
-    setClasses(description, ['px-6', 'text-sm', 'text-gray-700']);
-    description.textContent = truncate(item.text, 200);
-    card.appendChild(description);
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  setClasses(moreBtn, ['hover:text-gray-900', 'transition-colors']);
+  moreBtn.innerHTML = '<i class="fas fa-ellipsis-h"></i>';
+  moreBtn.title = 'Open ad source';
+  if (item.pageUrl) {
+    moreBtn.addEventListener('click', () => window.open(item.pageUrl, '_blank', 'noopener'));
+  } else {
+    moreBtn.disabled = true;
+    moreBtn.classList.add('opacity-40');
   }
   
-  const highlights = extractHighlights(item.text);
-  if (highlights.length > 1) {
-    const list = document.createElement('ul');
-    setClasses(list, ['px-6', 'space-y-2', 'text-sm', 'text-gray-700']);
-    highlights.forEach((line) => {
-      const li = document.createElement('li');
-      setClasses(li, ['flex', 'items-center', 'gap-2']);
-      const icon = document.createElement('i');
-      icon.className = 'fas fa-check-circle text-emerald-500';
-      li.appendChild(icon);
-      li.append(line);
-      list.appendChild(li);
-    });
-    card.appendChild(list);
-  }
+  headerActions.appendChild(copyBtn);
+  headerActions.appendChild(moreBtn);
+  header.appendChild(headerLeft);
+  header.appendChild(headerActions);
+  card.appendChild(header);
   
-  // Media section (image or video)
-  const mediaContainer = document.createElement('div');
-  setClasses(mediaContainer, ['w-full', 'h-80', 'bg-slate-100', 'border-t', 'border-gray-100', 'overflow-hidden']);
+  const mediaWrapper = document.createElement('div');
+  setClasses(mediaWrapper, ['relative', 'w-full', 'bg-black', 'aspect-[9/16]', 'overflow-hidden']);
   
   const images = item.imageUrls || [];
   const videos = item.videoUrls || [];
-  
-  if (videos.length > 0) {
+  const hasVideo = videos.length > 0;
+  if (hasVideo) {
     const video = document.createElement('video');
     video.src = videos[0];
-    video.controls = true;
     video.loop = true;
     video.muted = true;
-    video.playsInline = true;
     video.preload = 'metadata';
+    video.playsInline = true;
     video.setAttribute('title', 'Ad creative video');
-    setClasses(video, ['w-full', 'h-full', 'object-cover']);
-    mediaContainer.appendChild(video);
+    setClasses(video, ['absolute', 'inset-0', 'w-full', 'h-full', 'object-cover']);
+    mediaWrapper.appendChild(video);
   } else if (images.length > 0) {
     const img = document.createElement('img');
     img.src = images[0];
     img.alt = 'Ad creative';
     img.loading = 'lazy';
-    setClasses(img, ['w-full', 'h-full', 'object-cover']);
-    mediaContainer.appendChild(img);
+    setClasses(img, ['absolute', 'inset-0', 'w-full', 'h-full', 'object-cover']);
+    mediaWrapper.appendChild(img);
+  } else {
+    mediaWrapper.classList.add('flex', 'items-center', 'justify-center', 'text-white', 'text-sm');
+    mediaWrapper.textContent = 'No preview available';
   }
   
-  card.appendChild(mediaContainer);
+  const overlay = document.createElement('div');
+  setClasses(overlay, ['absolute', 'inset-0', 'flex', 'flex-col', 'justify-end', 'p-4', 'text-white']);
+  const highlights = extractHighlights(item.text);
+  const pill = document.createElement('span');
+  setClasses(pill, ['inline-block', 'bg-black/60', 'px-3', 'py-1', 'rounded-full', 'text-xs', 'mb-2']);
+  pill.textContent = truncate(highlights[0] || 'Sponsored creative', 40);
+  const overlayFooter = document.createElement('div');
+  setClasses(overlayFooter, ['flex', 'items-center', 'justify-between', 'text-xs']);
+  const overlayLeft = document.createElement('div');
+  setClasses(overlayLeft, ['flex', 'items-center', 'gap-2']);
+  const playBubble = document.createElement('div');
+  setClasses(playBubble, [
+    'w-7',
+    'h-7',
+    'rounded-full',
+    'border',
+    'border-white/50',
+    'flex',
+    'items-center',
+    'justify-center',
+    'bg-black/40',
+    'text-[10px]'
+  ]);
+  playBubble.textContent = hasVideo ? '▶' : '⧉';
+  const duration = document.createElement('span');
+  duration.textContent = item.duration || (hasVideo ? '0:00' : (formatDayDiff(item.capturedAt) || ''));
+  overlayLeft.appendChild(playBubble);
+  overlayLeft.appendChild(duration);
+  const expandIcon = document.createElement('span');
+  expandIcon.textContent = '⛶';
+  overlayFooter.appendChild(overlayLeft);
+  overlayFooter.appendChild(expandIcon);
+  overlay.appendChild(pill);
+  overlay.appendChild(overlayFooter);
+  mediaWrapper.appendChild(overlay);
+  card.appendChild(mediaWrapper);
+  
+  if (item.text) {
+    const textSection = document.createElement('div');
+    setClasses(textSection, ['px-4', 'pt-3', 'pb-1', 'text-sm', 'text-gray-800']);
+    const description = document.createElement('p');
+    let expanded = false;
+    const updateDescription = () => {
+      description.textContent = expanded ? item.text : truncate(item.text, 160);
+    };
+    updateDescription();
+    const toggleBtn = document.createElement('button');
+    setClasses(toggleBtn, ['text-blue-600', 'cursor-pointer', 'mt-1', 'text-xs']);
+    toggleBtn.textContent = 'Show more';
+    toggleBtn.addEventListener('click', () => {
+      expanded = !expanded;
+      toggleBtn.textContent = expanded ? 'Show less' : 'Show more';
+      updateDescription();
+    });
+    textSection.appendChild(description);
+    textSection.appendChild(toggleBtn);
+    card.appendChild(textSection);
+  }
+  
+  const statusRow = document.createElement('div');
+  setClasses(statusRow, ['flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'text-sm', 'text-gray-600']);
+  const statusIcon = document.createElement('span');
+  statusIcon.textContent = '📉';
+  const statusText = document.createElement('span');
+  const dayLabel = formatDayDiff(item.capturedAt) || 'Some time';
+  const statusLabel = item.status || 'Active';
+  statusText.innerHTML = `<span class="font-semibold text-gray-900">${dayLabel}</span> – ${statusLabel}`;
+  statusRow.appendChild(statusIcon);
+  statusRow.appendChild(statusText);
+  card.appendChild(statusRow);
+  
+  const ctas = document.createElement('div');
+  setClasses(ctas, ['flex', 'gap-3', 'px-4', 'pb-3']);
+  const createLinkButton = (label, href, primary = false) => {
+    const btn = document.createElement(href ? 'a' : 'button');
+    if (href) {
+      btn.href = href;
+      btn.target = '_blank';
+      btn.rel = 'noopener noreferrer';
+    } else {
+      btn.type = 'button';
+      btn.disabled = true;
+    }
+    setClasses(btn, [
+      'flex-1',
+      'text-sm',
+      'rounded-full',
+      'py-2',
+      primary ? 'bg-gray-900 text-white' : 'bg-gray-100 border border-gray-300 text-gray-900',
+      'text-center'
+    ]);
+    if (!href) {
+      btn.classList.add('opacity-60', 'cursor-not-allowed');
+    }
+    btn.textContent = label;
+    return btn;
+  };
+  const adLibraryBtn = createLinkButton('Ad Library', item.pageUrl || null, true);
+  const landingHref = item.landingPageUrl || images[0] || videos[0] || null;
+  const landingBtn = createLinkButton('Landing page', landingHref, false);
+  ctas.appendChild(adLibraryBtn);
+  ctas.appendChild(landingBtn);
+  card.appendChild(ctas);
   
   const footer = document.createElement('div');
-  setClasses(footer, ['px-6', 'pb-6', 'flex', 'items-center', 'justify-between', 'text-sm', 'text-gray-500']);
-  const domain = document.createElement('div');
-  setClasses(domain, ['font-semibold', 'text-gray-800']);
-  domain.textContent = getHostname(item.pageUrl);
-  
-  const platformTag = document.createElement('span');
-  setClasses(platformTag, [
-    'text-[0.65rem]',
-    'uppercase',
-    'tracking-[0.3em]',
-    'text-indigo-600',
-    'bg-indigo-50',
-    'px-3',
-    'py-1',
-    'rounded-full'
-  ]);
-  platformTag.textContent = item.platform || 'Unknown';
-  
-  footer.appendChild(domain);
-  footer.appendChild(platformTag);
+  setClasses(footer, ['border-t', 'border-gray-200', 'px-4', 'py-3', 'flex', 'items-center', 'justify-between', 'text-sm', 'text-gray-800']);
+  const footerLabel = document.createElement('span');
+  setClasses(footerLabel, ['tracking-[0.4em]', 'font-semibold']);
+  footerLabel.textContent = getHostname(item.pageUrl).toUpperCase();
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  setClasses(deleteBtn, ['text-xl', 'text-gray-500', 'hover:text-red-500', 'transition-colors']);
+  deleteBtn.textContent = '🗑️';
+  deleteBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    deleteItem(item.id);
+  });
+  footer.appendChild(footerLabel);
+  footer.appendChild(deleteBtn);
   card.appendChild(footer);
   
   return card;
 };
+
 
 const renderItems = () => {
   const container = document.getElementById('cardGrid');
