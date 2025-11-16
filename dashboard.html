@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Swipekit Lite Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="app-body">
+    <header class="dash-header">
+      <div>
+        <p class="eyebrow">Swipekit Lite</p>
+        <h1>Saved creatives</h1>
+        <p class="muted">All creatives captured from Facebook and Instagram.</p>
+      </div>
+      <div class="header-actions">
+        <input
+          id="searchInput"
+          type="search"
+          class="search-input"
+          placeholder="Search text, platform, or source URL"
+        />
+        <button id="clearAll" class="btn btn-danger">Clear all saved items</button>
+      </div>
+    </header>
+    <main class="app-main">
+      <section id="cardGrid" class="card-grid"></section>
+    </main>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
