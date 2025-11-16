@@ -255,6 +255,14 @@
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
 
+  const normalizeLineKey = (line) =>
+    line
+      .toLowerCase()
+      .replace(/…/g, '')
+      .replace(/\.\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .slice(0, 160);
+
   const cleanAdCopyText = (text) => {
     if (!text) return '';
     const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
@@ -271,7 +279,7 @@
       const seen = new Set();
       for (let index = lines.length - 1; index >= 0; index -= 1) {
         const line = lines[index];
-        const key = line.toLowerCase();
+        const key = normalizeLineKey(line);
         if (seen.has(key)) continue;
         seen.add(key);
         deduped.unshift(line);

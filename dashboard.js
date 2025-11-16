@@ -129,6 +129,14 @@ const AD_COPY_NOISE = [
 const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
 const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
 
+const normalizeLineKey = (line) =>
+  line
+    .toLowerCase()
+    .replace(/…/g, '')
+    .replace(/\.\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 160);
+
 const cleanAdCopy = (text) => {
   if (!text) return '';
   const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
@@ -145,7 +153,7 @@ const cleanAdCopy = (text) => {
     const seen = new Set();
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const line = lines[index];
-      const key = line.toLowerCase();
+      const key = normalizeLineKey(line);
       if (seen.has(key)) continue;
       seen.add(key);
       deduped.unshift(line);
@@ -257,24 +265,6 @@ const createMediaElement = (item) => {
   placeholder.textContent = 'No media yet';
   wrapper.appendChild(placeholder);
   return wrapper;
-};
-
-const extractTitle = (text) => {
-  if (!text) return 'Untitled ad';
-  const segments = text
-    .split(/\n+/)
-    .flatMap((segment) => segment.split(/(?<=[.!?])\s+/))
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  if (!segments.length) return 'Untitled ad';
-  return truncate(segments[0], 90);
-};
-
-const extractDescription = (text) => {
-  if (!text) return 'No caption captured for this ad yet.';
-  const segments = text.split(/\n+/).map((segment) => segment.trim()).filter(Boolean);
-  if (segments.length <= 1) return text.trim();
-  return segments.slice(1).join(' ');
 };
 
 const createDescriptionBlock = (text) => {
@@ -455,11 +445,7 @@ const createAdCard = (item) => {
   meta.appendChild(deleteBtn);
 
   const adCopy = getAdCopy(item);
-  const title = document.createElement('h3');
-  title.className = 'ad-card-title';
-  title.textContent = extractTitle(adCopy);
-
-  const description = createDescriptionBlock(extractDescription(adCopy));
+  const description = createDescriptionBlock(adCopy);
 
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
@@ -489,7 +475,6 @@ const createAdCard = (item) => {
 
   body.appendChild(brandHeader);
   body.appendChild(meta);
-  body.appendChild(title);
   body.appendChild(description);
   body.appendChild(tags);
   body.appendChild(footer);
