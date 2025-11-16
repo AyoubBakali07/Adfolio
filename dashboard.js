@@ -348,6 +348,15 @@ const deleteItem = (id) => {
   });
 };
 
+const DISALLOWED_TAGS = new Set(['ad library', 'facebook ad library', 'sponsored', 'web.facebook.com']);
+
+const isAllowedTag = (label) => {
+  if (!label) return false;
+  const normalized = label.trim().toLowerCase();
+  if (!normalized) return false;
+  return !DISALLOWED_TAGS.has(normalized);
+};
+
 const createAdCard = (item) => {
   const card = document.createElement('article');
   card.className = 'ad-card';
@@ -393,11 +402,15 @@ const createAdCard = (item) => {
 
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
-  const tagLabels = new Set(['Ad Library', 'Landing Page']);
+  const tagLabels = new Set(['Landing Page']);
   if (item.brandName) tagLabels.add(getBrandName(item));
   if (item.platform) tagLabels.add(item.platform.replace(/-/g, ' '));
   if (item.pageUrl) tagLabels.add(getHostname(item.pageUrl));
-  tagLabels.forEach((labelText) => tags.appendChild(createTagChip(labelText)));
+  tagLabels.forEach((labelText) => {
+    if (isAllowedTag(labelText)) {
+      tags.appendChild(createTagChip(labelText));
+    }
+  });
 
   const footer = document.createElement('div');
   footer.className = 'ad-card-footer';
