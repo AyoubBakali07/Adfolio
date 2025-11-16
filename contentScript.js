@@ -104,12 +104,34 @@
   };
 
   const collectImages = (card) => {
-    const urls = new Set();
+    const candidates = [];
     card.querySelectorAll('img').forEach((img) => {
       const source = normalizeUrl(img.currentSrc || img.src);
-      if (source) urls.add(source);
+      if (!source) return;
+      const rect = img.getBoundingClientRect();
+      const width = Math.round(rect.width || img.naturalWidth || img.width || 0);
+      const height = Math.round(rect.height || img.naturalHeight || img.height || 0);
+      candidates.push({ source, width, height, area: width * height });
     });
-    return Array.from(urls);
+
+    if (!candidates.length) return [];
+
+    const MIN_DIMENSION = 140; // exclude profile pics/logos
+    const large = candidates.filter(({ width, height, area }) => {
+      if (!width || !height) return false;
+      if (width >= MIN_DIMENSION || height >= MIN_DIMENSION) return true;
+      return area >= MIN_DIMENSION * MIN_DIMENSION;
+    });
+
+    const prioritized = (large.length ? large : candidates).sort((a, b) => b.area - a.area);
+    const seen = new Set();
+    return prioritized
+      .map(({ source }) => source)
+      .filter((src) => {
+        if (seen.has(src)) return false;
+        seen.add(src);
+        return true;
+      });
   };
 
   const collectVideos = (card) => {
