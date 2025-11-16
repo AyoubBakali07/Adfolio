@@ -3,17 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <title>Swipekit Lite</title>
+    <script src="tailwind-browser.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body class="popup-body">
-    <div class="popup-card">
-      <h1>Swipekit Lite</h1>
-      <p class="muted">Track ads from Facebook and Instagram.</p>
-      <div class="count-pill">
-        <span id="savedCount">0</span>
-        <span>saved items</span>
+  <body class="min-w-[280px] min-h-[180px] bg-[#f7f4ef] flex items-center justify-center p-4">
+    <div class="w-full rounded-2xl bg-white border border-gray-200 shadow-xl p-5 flex flex-col gap-3">
+      <h1 class="text-xl font-semibold text-gray-900">Swipekit Lite</h1>
+      <p class="text-sm text-gray-500">Track ads from Facebook and Instagram.</p>
+      <div class="flex items-end gap-2 text-gray-500">
+        <span id="savedCount" class="text-3xl font-bold text-gray-900">0</span>
+        <span class="text-sm uppercase tracking-wide">saved items</span>
       </div>
-      <button id="openDashboard" class="btn btn-primary">Open dashboard</button>
+      <button
+        id="openDashboard"
+        class="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-indigo-600 text-white font-semibold py-2.5 px-4 shadow-lg hover:from-indigo-600 hover:to-indigo-700 transition-colors"
+      >
+        Open dashboard
+      </button>
     </div>
     <script src="popup.js"></script>
   </body>

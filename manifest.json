@@ -13,6 +13,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;"
+  },
   "action": {
     "default_title": "Swipekit Lite",
     "default_popup": "popup.html",
