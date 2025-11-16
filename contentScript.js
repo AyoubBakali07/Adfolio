@@ -252,6 +252,8 @@
     /^show more$/i,
     /^show less$/i
   ];
+  const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
+  const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
 
   const cleanAdCopyText = (text) => {
     if (!text) return '';
@@ -260,8 +262,22 @@
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean)
-      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
-    if (lines.length) return lines.join('\n').trim();
+      .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
+      .filter(Boolean)
+      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)))
+      .filter((line) => !ELLIPSIS_LINE_PATTERN.test(line));
+    if (lines.length) {
+      const deduped = [];
+      const seen = new Set();
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const line = lines[index];
+        const key = line.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.unshift(line);
+      }
+      if (deduped.length) return deduped.join('\n').trim();
+    }
     const markers = ['see ad details', 'sponsored'];
     const lower = normalized.toLowerCase();
     for (const marker of markers) {
