@@ -48,6 +48,8 @@ const truncate = (text, limit = 140) => {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 };
 
+const getBrandName = (item) => (item.brandName && item.brandName.trim()) || 'Unknown brand';
+
 const getHostname = (url) => {
   if (!url) return 'Unknown source';
   try {
@@ -166,6 +168,39 @@ const createTagChip = (label) => {
   return chip;
 };
 
+const createBrandHeader = (item) => {
+  const container = document.createElement('div');
+  container.className = 'ad-card-brand';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'ad-card-brand-avatar';
+  if (item.brandLogo) {
+    const img = document.createElement('img');
+    img.src = item.brandLogo;
+    img.alt = `${getBrandName(item)} logo`;
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = getBrandName(item).charAt(0).toUpperCase();
+  }
+
+  const text = document.createElement('div');
+  text.className = 'ad-card-brand-text';
+  const title = document.createElement('p');
+  title.className = 'ad-card-brand-name';
+  title.textContent = getBrandName(item);
+  const subtitle = document.createElement('p');
+  subtitle.className = 'ad-card-brand-time';
+  const relative = formatRelativeTime(item.capturedAt);
+  const platform = (item.platform || 'Ad Library').replace(/-/g, ' ');
+  subtitle.textContent = `Saved ${relative} · ${platform}`;
+  text.appendChild(title);
+  text.appendChild(subtitle);
+
+  container.appendChild(avatar);
+  container.appendChild(text);
+  return container;
+};
+
 const handleCardSave = (item) => {
   const mediaUrl = (item.imageUrls && item.imageUrls.find(Boolean)) || (item.videoUrls && item.videoUrls.find(Boolean));
   const target = mediaUrl || item.pageUrl;
@@ -197,6 +232,8 @@ const createAdCard = (item) => {
   const body = document.createElement('div');
   body.className = 'ad-card-body';
 
+  const brandHeader = createBrandHeader(item);
+
   const meta = document.createElement('div');
   meta.className = 'ad-card-meta';
 
@@ -206,9 +243,8 @@ const createAdCard = (item) => {
   label.textContent = (item.platform || 'Ad Library').replace(/-/g, ' ').toUpperCase();
   const time = document.createElement('p');
   time.className = 'ad-card-time';
-  const relative = formatRelativeTime(item.capturedAt);
   const absolute = formatFullDate(item.capturedAt);
-  time.textContent = absolute ? `Saved ${relative} · ${absolute}` : `Saved ${relative}`;
+  time.textContent = absolute || '';
   metaText.appendChild(label);
   metaText.appendChild(time);
 
@@ -233,6 +269,7 @@ const createAdCard = (item) => {
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
   const tagLabels = new Set(['Ad Library', 'Landing Page']);
+  if (item.brandName) tagLabels.add(getBrandName(item));
   if (item.platform) tagLabels.add(item.platform.replace(/-/g, ' '));
   if (item.pageUrl) tagLabels.add(getHostname(item.pageUrl));
   tagLabels.forEach((labelText) => tags.appendChild(createTagChip(labelText)));
@@ -251,6 +288,7 @@ const createAdCard = (item) => {
 
   footer.appendChild(saveButton);
 
+  body.appendChild(brandHeader);
   body.appendChild(meta);
   body.appendChild(title);
   body.appendChild(description);

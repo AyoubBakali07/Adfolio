@@ -116,7 +116,7 @@
 
     if (!candidates.length) return [];
 
-    const MIN_DIMENSION = 140; // exclude profile pics/logos
+    const MIN_DIMENSION = 140;
     const large = candidates.filter(({ width, height, area }) => {
       if (!width || !height) return false;
       if (width >= MIN_DIMENSION || height >= MIN_DIMENSION) return true;
@@ -132,6 +132,58 @@
         seen.add(src);
         return true;
       });
+  };
+
+  const collectBrandInfo = (card) => {
+    let brandName = '';
+    const nameSelectors = [
+      'strong a',
+      'strong span',
+      '[role="heading"] a',
+      '[role="heading"] span',
+      'h3 a',
+      'h3 span',
+      'h4 a',
+      'h4 span'
+    ];
+    for (const selector of nameSelectors) {
+      const node = card.querySelector(selector);
+      if (node) {
+        const text = sanitize(node.textContent || '');
+        if (text) {
+          brandName = text.split('•')[0].trim();
+          break;
+        }
+      }
+    }
+    if (!brandName) {
+      const fallback = card.querySelector('strong, h3, h4, [role="heading"]');
+      if (fallback) brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
+    }
+
+    const potentialLogos = Array.from(card.querySelectorAll('img'))
+      .map((img) => {
+        const source = normalizeUrl(img.currentSrc || img.src);
+        if (!source) return null;
+        const rect = img.getBoundingClientRect();
+        const width = Math.round(rect.width || img.naturalWidth || img.width || 0);
+        const height = Math.round(rect.height || img.naturalHeight || img.height || 0);
+        const alt = (img.getAttribute('alt') || '').toLowerCase();
+        return { img, source, width, height, alt };
+      })
+      .filter(Boolean)
+      .filter(({ width, height }) => width && height && width <= 160 && height <= 160);
+
+    let brandLogo = null;
+    const logoMatch = potentialLogos.find(({ width, height, alt }) => {
+      if (!width || !height) return false;
+      const approxSquare = Math.abs(width - height) <= Math.min(width, height) * 0.4;
+      if (alt.includes('profile') || alt.includes('logo')) return true;
+      return approxSquare && width <= 120 && height <= 120;
+    });
+    if (logoMatch) brandLogo = logoMatch.source;
+
+    return { brandName, brandLogo };
   };
 
   const collectVideos = (card) => {
@@ -155,16 +207,21 @@
     return sanitize(clone.innerText || '');
   };
 
-  const captureCard = (card) => ({
-    id: createId(),
-    platform: detectPlatform(),
-    capturedAt: new Date().toISOString(),
-    pageUrl: window.location.href,
-    text: getCardText(card),
-    imageUrls: collectImages(card),
-    videoUrls: collectVideos(card),
-    extra: {}
-  });
+  const captureCard = (card) => {
+    const { brandName, brandLogo } = collectBrandInfo(card);
+    return {
+      id: createId(),
+      platform: detectPlatform(),
+      capturedAt: new Date().toISOString(),
+      pageUrl: window.location.href,
+      text: getCardText(card),
+      imageUrls: collectImages(card),
+      videoUrls: collectVideos(card),
+      brandName,
+      brandLogo,
+      extra: {}
+    };
+  };
 
   const showToast = (message, isError = false) => {
     const toast = document.createElement('div');

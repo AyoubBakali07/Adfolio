@@ -323,6 +323,47 @@ button {
   flex: 1;
 }
 
+.ad-card-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ad-card-brand-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--accent);
+  overflow: hidden;
+}
+
+.ad-card-brand-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ad-card-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ad-card-brand-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ad-card-brand-time {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .ad-card-meta {
   display: flex;
   justify-content: space-between;
