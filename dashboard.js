@@ -16,17 +16,35 @@ const sendMessage = (type, payload = {}) =>
 let items = [];
 let searchQuery = '';
 
-const formatDate = (iso) => {
-  if (!iso) return 'Unknown date';
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
+// Format date to relative time (e.g., "2 hours ago")
+const formatRelativeTime = (dateString) => {
+  if (!dateString) return 'Some time ago';
+  
+  const date = new Date(dateString);
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+  
+  const intervals = {
+    year: 31536000,
+    month: 2592000,
+    week: 604800,
+    day: 86400,
+    hour: 3600,
+    minute: 60
+  };
+  
+  for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+    const interval = Math.floor(seconds / secondsInUnit);
+    if (interval >= 1) {
+      return interval === 1 ? `${interval} ${unit} ago` : `${interval} ${unit}s ago`;
+    }
   }
+  
+  return 'Just now';
 };
 
-const truncate = (text, limit = 240) => {
-  if (!text) return '[No text captured]';
+const truncate = (text, limit = 120) => {
+  if (!text) return '';
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 };
 
@@ -34,146 +52,250 @@ const applyFilters = () => {
   if (!searchQuery) return [...items];
   const normalized = searchQuery.toLowerCase();
   return items.filter((item) => {
-    const haystack = [item.text, item.platform, item.pageUrl].filter(Boolean).join(' ').toLowerCase();
+    const haystack = [
+      item.text || '',
+      item.platform || '',
+      item.brandName || '',
+      item.pageUrl || ''
+    ].join(' ').toLowerCase();
     return haystack.includes(normalized);
   });
+};
+
+const createAdCard = (item) => {
+  const card = document.createElement('article');
+  card.className = 'ad-card';
+  
+  // Media section (image or video)
+  const mediaContainer = document.createElement('div');
+  mediaContainer.className = 'ad-media';
+  
+  const images = item.imageUrls || [];
+  const videos = item.videoUrls || [];
+  
+  if (videos.length > 0) {
+    const video = document.createElement('video');
+    video.src = videos[0];
+    video.controls = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.setAttribute('title', 'Ad creative video');
+    mediaContainer.appendChild(video);
+  } else if (images.length > 0) {
+    const img = document.createElement('img');
+    img.src = images[0];
+    img.alt = 'Ad creative';
+    img.loading = 'lazy';
+    mediaContainer.appendChild(img);
+  }
+  
+  // Content section
+  const content = document.createElement('div');
+  content.className = 'ad-content';
+  
+  // Header with platform and timestamp
+  const header = document.createElement('div');
+  header.className = 'ad-header';
+  
+  const platform = document.createElement('div');
+  platform.className = 'ad-platform';
+  platform.textContent = item.platform || 'AD';
+  
+  const timestamp = document.createElement('div');
+  timestamp.className = 'ad-timestamp';
+  timestamp.textContent = formatRelativeTime(item.capturedAt);
+  
+  header.appendChild(platform);
+  header.appendChild(timestamp);
+  
+  // Brand and title
+  const details = document.createElement('div');
+  details.className = 'ad-details';
+  
+  if (item.brandName) {
+    const brand = document.createElement('div');
+    brand.className = 'ad-brand';
+    brand.textContent = item.brandName;
+    details.appendChild(brand);
+  }
+  
+  if (item.text) {
+    const description = document.createElement('div');
+    description.className = 'ad-description';
+    description.textContent = truncate(item.text);
+    details.appendChild(description);
+  }
+  
+  // Meta information
+  const meta = document.createElement('div');
+  meta.className = 'ad-meta';
+  
+  if (item.platform) {
+    const platformMeta = document.createElement('div');
+    platformMeta.className = 'meta-item';
+    platformMeta.innerHTML = `<i class="fas fa-mobile-alt"></i> ${item.platform}`;
+    meta.appendChild(platformMeta);
+  }
+  
+  if (item.duration) {
+    const duration = document.createElement('div');
+    duration.className = 'meta-item';
+    duration.innerHTML = `<i class="far fa-clock"></i> ${item.duration}`;
+    meta.appendChild(duration);
+  }
+  
+  // Action buttons
+  const actions = document.createElement('div');
+  actions.className = 'ad-actions';
+  
+  const viewSource = document.createElement('a');
+  viewSource.className = 'btn btn-outline';
+  viewSource.href = item.pageUrl || '#';
+  viewSource.target = '_blank';
+  viewSource.rel = 'noopener noreferrer';
+  viewSource.innerHTML = '<i class="fas fa-external-link-alt"></i> View source';
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn btn-danger';
+  deleteBtn.innerHTML = '<i class="far fa-trash-alt"></i>';
+  deleteBtn.title = 'Delete';
+  deleteBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    deleteItem(item.id);
+  });
+  
+  actions.appendChild(viewSource);
+  actions.appendChild(deleteBtn);
+  
+  // Assemble the card
+  content.appendChild(header);
+  content.appendChild(details);
+  content.appendChild(meta);
+  content.appendChild(actions);
+  
+  card.appendChild(mediaContainer);
+  card.appendChild(content);
+  
+  return card;
 };
 
 const renderItems = () => {
   const container = document.getElementById('cardGrid');
   container.innerHTML = '';
+  
   const filtered = applyFilters();
-
-  if (!filtered.length) {
+  
+  if (filtered.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = items.length
-      ? 'No items match your search.'
-      : 'No creatives saved yet. Capture some using the extension.';
+    empty.innerHTML = `
+      <i class="fas fa-inbox fa-3x"></i>
+      <h3>No creatives found</h3>
+      <p>${items.length ? 'Try adjusting your search or filters' : 'Start by capturing some ads'}</p>
+    `;
     container.appendChild(empty);
     return;
   }
-
-  filtered.forEach((item) => {
-    const card = document.createElement('article');
-    card.className = 'ad-card';
-
-    const header = document.createElement('div');
-    header.className = 'card-header';
-
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = item.platform;
-
-    const date = document.createElement('span');
-    date.className = 'timestamp';
-    date.textContent = formatDate(item.capturedAt);
-
-    header.appendChild(badge);
-    header.appendChild(date);
-
-    const text = document.createElement('p');
-    text.className = 'card-text';
-    text.textContent = truncate(item.text);
-
-    const images = item.imageUrls || [];
-    const videos = item.videoUrls || [];
-    const hasMedia = images.length || videos.length;
-    let thumbs;
-    if (hasMedia) {
-      thumbs = document.createElement('div');
-      thumbs.className = 'thumbs';
-      images.forEach((url) => {
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = 'Ad creative';
-        img.loading = 'lazy';
-        thumbs.appendChild(img);
-      });
-      videos.forEach((url) => {
-        const video = document.createElement('video');
-        video.src = url;
-        video.controls = true;
-        video.loop = true;
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = 'metadata';
-        video.setAttribute('title', 'Ad creative video');
-        thumbs.appendChild(video);
-      });
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-
-    const link = document.createElement('a');
-    link.className = 'btn btn-ghost';
-    link.textContent = 'View source';
-    if (item.pageUrl) {
-      link.href = item.pageUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-    } else {
-      link.href = '#';
-      link.classList.add('is-disabled');
-      link.setAttribute('aria-disabled', 'true');
-      link.addEventListener('click', (event) => event.preventDefault());
-    }
-
-    const del = document.createElement('button');
-    del.className = 'btn btn-danger';
-    del.textContent = 'Delete';
-    del.addEventListener('click', () => deleteItem(item.id));
-
-    actions.appendChild(link);
-    actions.appendChild(del);
-
-    card.appendChild(header);
-    card.appendChild(text);
-    if (thumbs) {
-      card.appendChild(thumbs);
-    }
-    card.appendChild(actions);
+  
+  filtered.forEach(item => {
+    const card = createAdCard(item);
     container.appendChild(card);
-  });
-};
+  });};
 
+// Fetch items from storage
 const fetchItems = async () => {
   try {
-    items = await sendMessage('GET_AD_ITEMS');
+    const data = await sendMessage('GET_AD_ITEMS');
+    items = Array.isArray(data) ? data : [];
     renderItems();
   } catch (error) {
-    console.error('Failed to load items', error);
+    console.error('Failed to load items:', error);
+    // Show error state
+    const container = document.getElementById('cardGrid');
+    container.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-exclamation-triangle fa-3x"></i>
+        <h3>Failed to load items</h3>
+        <p>${error.message || 'Please try again later'}</p>
+      </div>
+    `;
   }
 };
 
+// Delete an item
 const deleteItem = async (id) => {
+  if (!confirm('Are you sure you want to delete this item?')) return;
+  
   try {
-    const updated = await sendMessage('DELETE_AD_ITEM', { id });
-    items = updated;
+    await sendMessage('DELETE_AD_ITEM', { id });
+    items = items.filter(item => item.id !== id);
     renderItems();
   } catch (error) {
-    console.error('Failed to delete item', error);
+    console.error('Failed to delete item:', error);
+    alert('Failed to delete item. Please try again.');
   }
 };
 
-const clearAll = async () => {
-  if (!items.length) return;
-  if (!confirm('Clear all saved items?')) return;
+// Clear all items
+const clearAllItems = async () => {
+  if (!items.length || !confirm('Are you sure you want to delete all saved items? This cannot be undone.')) {
+    return;
+  }
+  
   try {
     await sendMessage('CLEAR_ALL_ITEMS');
     items = [];
     renderItems();
   } catch (error) {
-    console.error('Failed to clear items', error);
+    console.error('Failed to clear items:', error);
+    alert('Failed to clear items. Please try again.');
   }
 };
 
+// Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('searchInput').addEventListener('input', (event) => {
-    searchQuery = event.target.value.trim();
-    renderItems();
-  });
-  document.getElementById('clearAll').addEventListener('click', clearAll);
+  // Search functionality
+  const searchInput = document.querySelector('.search-bar input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value.trim().toLowerCase();
+      renderItems();
+    });
+  }
+  
+  // Clear all button
+  const clearAllBtn = document.querySelector('.clear-all');
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', clearAllItems);
+  }
+  
+  // Fetch initial data
   fetchItems();
+  
+  // Add active class to current nav item
+  const currentPath = window.location.pathname;
+  document.querySelectorAll('.nav-item').forEach(item => {
+    if (item.getAttribute('href') === currentPath) {
+      item.classList.add('active');
+    }
+  });
+  
+  // Toggle sidebar on mobile
+  const sidebarToggle = document.querySelector('.sidebar-toggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebarToggle && sidebar) {
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+  }
+});
+
+// Handle window resize for responsive behavior
+window.addEventListener('resize', () => {
+  // Close sidebar when resizing to mobile
+  if (window.innerWidth < 768) {
+    document.querySelector('.sidebar')?.classList.remove('open');
+  }
 });

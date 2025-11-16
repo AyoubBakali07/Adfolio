@@ -4,28 +4,144 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Swipekit Lite Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="app-body">
-    <header class="dash-header">
-      <div>
-        <p class="eyebrow">Swipekit Lite</p>
-        <h1>Saved creatives</h1>
-        <p class="muted">All creatives captured from Facebook and Instagram.</p>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <i class="fas fa-bolt"></i>
+            <span>Swipekit</span>
+            <i class="fas fa-plus"></i>
+          </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+          <div class="nav-section">
+            <a href="#" class="nav-item active">
+              <i class="fas fa-book"></i>
+              <div class="nav-text">
+                <span>Library</span>
+                <span class="nav-subtext">All your ads in one place</span>
+              </div>
+            </a>
+            <a href="#" class="nav-item">
+              <i class="fas fa-chart-line"></i>
+              <div class="nav-text">
+                <span>Brand Tracker</span>
+                <span class="nav-subtext">Spy your competition</span>
+              </div>
+            </a>
+            <a href="#" class="nav-item">
+              <i class="fas fa-users"></i>
+              <div class="nav-text">
+                <span>Multiplayer</span>
+                <span class="nav-subtext">Browse 1M+ ads</span>
+              </div>
+            </a>
+            <a href="#" class="nav-item">
+              <i class="fas fa-robot"></i>
+              <div class="nav-text">
+                <span>AI Generations</span>
+                <span class="nav-subtext">Saved AI generations</span>
+              </div>
+            </a>
+          </div>
+
+          <div class="search-container">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" class="sidebar-search" placeholder="Search for boards">
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-section-header">
+              <span>Folders</span>
+              <i class="fas fa-plus"></i>
+            </div>
+            <a href="#" class="nav-item folder-item">
+              <i class="far fa-folder"></i>
+              <span>Default</span>
+              <span class="folder-count">0</span>
+              <i class="fas fa-ellipsis-h"></i>
+            </a>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <a href="#" class="nav-item">
+            <i class="fas fa-question-circle"></i>
+            <span>Helpdesk</span>
+          </a>
+          <a href="#" class="nav-item">
+            <i class="fas fa-headset"></i>
+            <span>Support</span>
+          </a>
+          <div class="credits">
+            <i class="fas fa-bolt"></i>
+            <span>AI Credits 0/30</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <header class="content-header">
+          <div class="breadcrumb">
+            <span>Library</span>
+            <i class="fas fa-chevron-right"></i>
+            <span class="active">All your ads, in one place</span>
+          </div>
+          
+          <div class="content-actions">
+            <div class="search-bar">
+              <i class="fas fa-search"></i>
+              <input type="text" placeholder="Search">
+            </div>
+            
+            <div class="filter-buttons">
+              <button class="filter-btn">
+                <i class="fas fa-tag"></i>
+                <span>Tags</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-check-circle"></i>
+                <span>Active ads</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-mobile-alt"></i>
+                <span>Platform</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-building"></i>
+                <span>Brands</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-image"></i>
+                <span>Asset</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-sort"></i>
+                <span>Sort</span>
+              </button>
+              <button class="filter-btn">
+                <i class="fas fa-sliders-h"></i>
+                <span>Display</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main class="app-main">
+          <section id="cardGrid" class="card-grid">
+            <!-- Cards will be inserted here by JavaScript -->
+          </section>
+        </main>
       </div>
-      <div class="header-actions">
-        <input
-          id="searchInput"
-          type="search"
-          class="search-input"
-          placeholder="Search text, platform, or source URL"
-        />
-        <button id="clearAll" class="btn btn-danger">Clear all saved items</button>
-      </div>
-    </header>
-    <main class="app-main">
-      <section id="cardGrid" class="card-grid"></section>
-    </main>
+    </div>
+    
     <script src="dashboard.js"></script>
   </body>
 </html>
