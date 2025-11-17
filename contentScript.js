@@ -254,8 +254,28 @@
   ];
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
-  const DOMAIN_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
-  const CTA_IGNORE = [/show more/i, /show less/i, /sponsored/i];
+  const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+  const DOMAIN_INLINE_PATTERN = /[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i;
+  const CTA_LABELS = [
+    'Shop Now',
+    'Learn More',
+    'Sign Up',
+    'Order Now',
+    'Subscribe',
+    'Get Offer',
+    'Contact Us',
+    'Apply Now',
+    'Download',
+    'Install Now',
+    'Watch More',
+    'Book Now',
+    'Get Quote',
+    'See Menu',
+    'Donate Now',
+    'View Details'
+  ];
+  const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
+  const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
 
   const normalizeLineKey = (line) =>
     line
@@ -265,110 +285,137 @@
       .replace(/\s+/g, ' ')
       .slice(0, 160);
 
-  const cleanAdCopyText = (text) => {
-    if (!text) return '';
+  const stripBrandPrefix = (line, brandName) => {
+    if (!brandName) return line;
+    const pattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*Sponsored\\s*`, 'i');
+    const stripped = line.replace(pattern, '').trim();
+    if (stripped) return stripped;
+    const brandPattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    return line.replace(brandPattern, '').trim();
+  };
+
+  const splitSegmentsByPattern = (segment, regex) => {
+    const results = [];
+    let remaining = segment;
+    while (remaining) {
+      const match = remaining.match(regex);
+      if (!match || typeof match.index !== 'number') {
+        if (remaining.trim()) results.push(remaining.trim());
+        break;
+      }
+      const before = remaining.slice(0, match.index).trim();
+      const after = remaining.slice(match.index + match[0].length).trim();
+      if (before) results.push(before);
+      results.push(match[0].trim());
+      remaining = after;
+    }
+    return results;
+  };
+
+  const splitLineSegments = (line) => {
+    let segments = [line];
+    [DOMAIN_INLINE_PATTERN, CTA_PATTERN].forEach((regex) => {
+      const buffer = [];
+      segments.forEach((segment) => buffer.push(...splitSegmentsByPattern(segment, regex)));
+      segments = buffer;
+    });
+    return segments;
+  };
+
+  const shouldDropPrefix = (value) => /(activelibrary id|see ad details|open dropdown|summary details|total active time|platforms?)/i.test(value);
+
+  const removeMetadataPrefix = (line) => {
+    const lower = line.toLowerCase();
+    const idx = lower.lastIndexOf('sponsored');
+    if (idx > -1) {
+      const prefix = lower.slice(0, idx);
+      if (shouldDropPrefix(prefix)) {
+        return line.slice(idx + 'sponsored'.length).trim();
+      }
+    }
+    return line;
+  };
+
+  const cleanSegments = (text, brandName = '') => {
+    if (!text) return [];
     const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
-    const lines = normalized
+    const segments = [];
+    normalized
       .split(/\n+/)
-      .map((line) => line.trim())
+      .map((line) => removeMetadataPrefix(stripBrandPrefix(line.trim(), brandName)))
       .filter(Boolean)
       .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
       .filter(Boolean)
-      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)))
-      .filter((line) => !ELLIPSIS_LINE_PATTERN.test(line));
-    if (lines.length) {
-      const deduped = [];
-      const seen = new Set();
-      for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const line = lines[index];
-        const key = normalizeLineKey(line);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.unshift(line);
+      .forEach((line) => {
+        splitLineSegments(line)
+          .map((segment) => segment.trim())
+          .filter(Boolean)
+          .filter((segment) => !AD_COPY_NOISE.some((pattern) => pattern.test(segment)))
+          .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
+          .forEach((segment) => segments.push(segment));
+      });
+    return segments;
+  };
+
+  const categorizeSegments = (segments) => {
+    const primary = [];
+    const descriptionParts = [];
+    let domain = '';
+    let headline = '';
+    let ctaLabel = '';
+    segments.forEach((segment) => {
+      const normalized = segment.trim();
+      if (!normalized) return;
+      const lowered = normalized.toLowerCase();
+      if (!ctaLabel && CTA_LABEL_SET.has(lowered)) {
+        ctaLabel = normalized;
+        return;
       }
-      if (deduped.length) return deduped.join('\n').trim();
-    }
-    const markers = ['see ad details', 'sponsored'];
-    const lower = normalized.toLowerCase();
-    for (const marker of markers) {
-      const index = lower.indexOf(marker);
-      if (index !== -1) {
-        const slice = normalized.slice(index + marker.length).trim();
-        if (slice) return slice;
+      const domainCandidate = normalized.replace(/^https?:\/\//i, '');
+      if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
+        domain = normalized;
+        return;
       }
-    }
-    return normalized.trim();
-  };
-
-  const getAdCopyData = (card) => {
-    const rawText = getCardText(card);
-    const adCopy = cleanAdCopyText(rawText) || rawText;
-    return { rawText, adCopy };
-  };
-
-  const getCandidateLines = (text) =>
-    text
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => !AD_COPY_NOISE.some((pattern) => pattern.test(line)));
-
-  const removePrimaryLines = (lines, primaryText) => {
-    if (!primaryText) return lines;
-    const keys = new Set(primaryText.split('\n').map((line) => normalizeLineKey(line)));
-    return lines.filter((line) => !keys.has(normalizeLineKey(line)));
-  };
-
-  const findCtaLabel = (card) => {
-    const buttons = Array.from(card.querySelectorAll('a[role="button"], button')).filter(
-      (node) => !node.closest('.swipekit-save-btn-wrapper')
-    );
-    for (const node of buttons) {
-      const label = sanitize(node.textContent || '');
-      if (!label) continue;
-      if (CTA_IGNORE.some((pattern) => pattern.test(label))) continue;
-      return label;
-    }
-    return '';
-  };
-
-  const extractStructuredFields = (card, rawText, primaryText) => {
-    const ctaLabel = findCtaLabel(card);
-    const ctaKey = ctaLabel ? normalizeLineKey(ctaLabel) : '';
-    const lines = removePrimaryLines(getCandidateLines(rawText), primaryText).filter((line) => {
-      if (!ctaKey) return true;
-      return normalizeLineKey(line) !== ctaKey;
+      if (domain && !headline) {
+        headline = normalized;
+        return;
+      }
+      if (domain && headline) {
+        descriptionParts.push(normalized);
+        return;
+      }
+      primary.push(normalized);
     });
-    const domainIndex = lines.findIndex((line) => DOMAIN_PATTERN.test(line.replace(/^https?:\/\//i, '')));
-    if (domainIndex === -1) {
-      return { ctaLabel };
-    }
-    const domain = lines[domainIndex];
-    const headline = lines[domainIndex + 1] || '';
-    const descriptionLines = lines
-      .slice(domainIndex + 2)
-      .filter((line) => !CTA_IGNORE.some((pattern) => pattern.test(line)));
-    const description = descriptionLines.join(' ');
+    const primaryText = primary.join('\n').trim();
     return {
+      primaryText,
       domain,
       headline,
-      description,
+      description: descriptionParts.join(' ').trim(),
       ctaLabel
     };
   };
 
+  const extractTextSegments = (card, brandName) => {
+    const rawText = getCardText(card);
+    const segments = cleanSegments(rawText, brandName);
+    const result = categorizeSegments(segments);
+    if (!result.primaryText && rawText.trim()) {
+      result.primaryText = rawText.trim();
+    }
+    return { rawText, ...result };
+  };
+
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
-    const { rawText, adCopy } = getAdCopyData(card);
-    const structured = extractStructuredFields(card, rawText, adCopy);
+    const { rawText, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
     const aspectRatio = detectAspectRatio(card);
     const payload = {
       id: createId(),
       platform: detectPlatform(),
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
-      text: adCopy,
+      text: primaryText,
       imageUrls: collectImages(card),
       videoUrls: collectVideos(card),
       brandName,
@@ -379,11 +426,11 @@
       payload.extra.aspectRatio = aspectRatio;
     }
     payload.extra.rawText = rawText;
-    payload.extra.adCopy = adCopy;
-    payload.extra.domain = structured.domain || '';
-    payload.extra.headline = structured.headline || '';
-    payload.extra.linkDescription = structured.description || '';
-    payload.extra.ctaLabel = structured.ctaLabel || '';
+    payload.extra.adCopy = primaryText;
+    payload.extra.domain = domain || '';
+    payload.extra.headline = headline || '';
+    payload.extra.linkDescription = description || '';
+    payload.extra.ctaLabel = ctaLabel || '';
     return payload;
   };
 
