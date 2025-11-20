@@ -239,12 +239,24 @@
   const getCardText = (card) => {
     const clone = card.cloneNode(true);
     clone.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-    const text = clone.innerText || '';
-    return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n').trim();
+    // Force pre-wrap to preserve newlines in the clone's text
+    clone.style.whiteSpace = 'pre-wrap';
+    // We need to append it to the DOM briefly to get computed styles if we were using them,
+    // but for innerText with pre-wrap, it usually works on detached nodes in modern browsers
+    // if we set the style directly. However, to be safe, let's use the same div approach
+    // as getTextFromRange if possible, or just rely on the style property.
+    // Actually, innerText on a detached node might still be tricky.
+    // Let's use the same helper logic:
+    const div = document.createElement('div');
+    div.style.whiteSpace = 'pre-wrap';
+    div.appendChild(clone);
+    return div.innerText || '';
   };
 
   const AD_COPY_NOISE = [
     /^activelibrary id/i,
+    /^library id/i,
+    /^active\s*library\s*id/i,
     /^started running/i,
     /^platforms/i,
     /^open dropdown/i,
@@ -255,7 +267,13 @@
     /^landing page\b/i,
     /^saved \d+/i,
     /^show more$/i,
-    /^show less$/i
+    /^show less$/i,
+    /^see summary details/i,
+    /^total active time/i,
+    /^\d+ ads use this creative/i,
+    /^missing teeth\?/i // specific noise from example if it's not part of ad? No, that looks like headline.
+    // Wait, "Missing Teeth?..." in the user image IS the headline/ad text.
+    // The noise is "ActiveLibrary ID: ... Started running on ... Platforms ... 2 ads use this creative ... See summary details ... Sponsored"
   ];
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
@@ -324,10 +342,14 @@
 
   const removeMetadataPrefix = (line) => {
     const lower = line.toLowerCase();
+    // Aggressive check for "Sponsored" at the end of a metadata block
+    if (lower === 'sponsored') return '';
+
     const idx = lower.lastIndexOf('sponsored');
     if (idx > -1) {
       const prefix = lower.slice(0, idx);
-      if (shouldDropPrefix(prefix)) {
+      // If the prefix looks like metadata, drop it and the "Sponsored"
+      if (shouldDropPrefix(prefix) || prefix.length < 50) { // Heuristic: short prefix ending in sponsored is likely "BrandName Sponsored"
         return line.slice(idx + 'sponsored'.length);
       }
     }
@@ -448,6 +470,7 @@
     else range.setEndAfter(root.lastChild || root);
     const fragment = range.cloneContents();
     const div = document.createElement('div');
+    div.style.whiteSpace = 'pre-wrap';
     div.appendChild(fragment);
     div.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
     return div.innerText || '';
