@@ -424,6 +424,7 @@
     };
   };
 
+<<<<<<< HEAD
 
 
   const getTextFromRange = (root, startNode, endNode) => {
@@ -475,6 +476,8 @@
     return filteredLines.join('\n').trim();
   };
 
+=======
+>>>>>>> parent of 9de2319 (get full ad copy)
   const extractTextSegments = (card, brandName) => {
     const rawText = getCardText(card);
     const segments = cleanSegments(rawText, brandName);
