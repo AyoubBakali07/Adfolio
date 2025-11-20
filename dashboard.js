@@ -264,7 +264,7 @@ const categorizeSegments = (segments) => {
     primaryText: primary.join('\n').trim(),
     domain,
     headline,
-    description: descriptionParts.join(' ').trim(),
+    description: descriptionParts.join('\n').trim(),
     ctaLabel
   };
 };

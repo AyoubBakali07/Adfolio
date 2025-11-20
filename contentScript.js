@@ -419,65 +419,11 @@
       primaryText,
       domain,
       headline,
-      description: descriptionParts.join(' ').trim(),
+      description: descriptionParts.join('\n').trim(),
       ctaLabel
     };
   };
 
-<<<<<<< HEAD
-
-
-  const getTextFromRange = (root, startNode, endNode) => {
-    const range = document.createRange();
-    if (startNode) range.setStartAfter(startNode);
-    else range.setStart(root, 0);
-    if (endNode) range.setEndBefore(endNode);
-    else range.setEndAfter(root.lastChild || root);
-    const fragment = range.cloneContents();
-
-    const div = document.createElement('div');
-    div.style.position = 'absolute';
-    div.style.left = '-9999px';
-    div.style.top = '-9999px';
-    div.style.whiteSpace = 'pre-wrap';
-    div.appendChild(fragment);
-    div.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-
-    document.body.appendChild(div);
-    const text = div.innerText || '';
-    document.body.removeChild(div);
-
-    return text;
-  };
-
-  const cleanBodyText = (text, brandName) => {
-    if (!text) return '';
-    const cleaned = text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
-    const lines = cleaned.split('\n');
-    const filteredLines = [];
-    let passedHeader = false;
-    for (let i = 0; i < lines.length; i += 1) {
-      let line = lines[i].trim();
-      if (!line) {
-        if (passedHeader) filteredLines.push('');
-        continue;
-      }
-      if (shouldDropPrefix(line) || AD_COPY_NOISE.some((p) => p.test(line))) continue;
-      if (!passedHeader) {
-        if (line.toLowerCase() === 'sponsored' || (brandName && line.toLowerCase().includes(brandName.toLowerCase()))) {
-          line = stripBrandPrefix(line, brandName);
-          line = removeMetadataPrefix(line);
-          if (!line.trim()) continue;
-        }
-        passedHeader = true;
-      }
-      filteredLines.push(line);
-    }
-    return filteredLines.join('\n').trim();
-  };
-
-=======
->>>>>>> parent of 9de2319 (get full ad copy)
   const extractTextSegments = (card, brandName) => {
     const rawText = getCardText(card);
     const segments = cleanSegments(rawText, brandName);
