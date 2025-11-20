@@ -239,18 +239,25 @@
   const getCardText = (card) => {
     const clone = card.cloneNode(true);
     clone.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-    // Force pre-wrap to preserve newlines in the clone's text
-    clone.style.whiteSpace = 'pre-wrap';
-    // We need to append it to the DOM briefly to get computed styles if we were using them,
-    // but for innerText with pre-wrap, it usually works on detached nodes in modern browsers
-    // if we set the style directly. However, to be safe, let's use the same div approach
-    // as getTextFromRange if possible, or just rely on the style property.
-    // Actually, innerText on a detached node might still be tricky.
-    // Let's use the same helper logic:
+
+    // Insert newlines after block elements to prevent run-on text
+    const blockElements = clone.querySelectorAll('div, p, h1, h2, h3, h4, h5, h6, li, br');
+    blockElements.forEach(el => {
+      el.after(document.createTextNode('\n'));
+    });
+
     const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.left = '-9999px';
+    div.style.top = '-9999px';
     div.style.whiteSpace = 'pre-wrap';
     div.appendChild(clone);
-    return div.innerText || '';
+
+    document.body.appendChild(div);
+    const text = div.innerText || '';
+    document.body.removeChild(div);
+
+    return text;
   };
 
   const AD_COPY_NOISE = [
@@ -469,11 +476,20 @@
     if (endNode) range.setEndBefore(endNode);
     else range.setEndAfter(root.lastChild || root);
     const fragment = range.cloneContents();
+
     const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.left = '-9999px';
+    div.style.top = '-9999px';
     div.style.whiteSpace = 'pre-wrap';
     div.appendChild(fragment);
     div.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-    return div.innerText || '';
+
+    document.body.appendChild(div);
+    const text = div.innerText || '';
+    document.body.removeChild(div);
+
+    return text;
   };
 
   const cleanBodyText = (text, brandName) => {
@@ -522,7 +538,12 @@
     }
 
     if (!primaryText && rawText.trim()) {
-      primaryText = rawText.trim();
+      // Do NOT fallback to rawText if it's just noise.
+      // If we failed to extract clean text, it's better to return empty
+      // than to return the raw metadata blob.
+      // However, if rawText is very different from what we filtered out, maybe?
+      // For now, let's trust our cleaner. If it's empty, it's empty.
+      // primaryText = rawText.trim(); 
     }
 
     return {
