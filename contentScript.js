@@ -142,6 +142,7 @@
 
   const collectBrandInfo = (card) => {
     let brandName = '';
+    let brandElement = null;
     const nameSelectors = [
       'strong a',
       'strong span',
@@ -158,13 +159,17 @@
         const text = sanitize(node.textContent || '');
         if (text) {
           brandName = text.split('•')[0].trim();
+          brandElement = node;
           break;
         }
       }
     }
     if (!brandName) {
       const fallback = card.querySelector('strong, h3, h4, [role="heading"]');
-      if (fallback) brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
+      if (fallback) {
+        brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
+        brandElement = fallback;
+      }
     }
 
     const potentialLogos = Array.from(card.querySelectorAll('img'))
@@ -189,7 +194,7 @@
     });
     if (logoMatch) brandLogo = logoMatch.source;
 
-    return { brandName, brandLogo };
+    return { brandName, brandLogo, brandElement };
   };
 
   const getVideoCandidates = (card) => {
@@ -277,39 +282,32 @@
   const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
   const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
 
-  const normalizeLineKey = (line) =>
-    line
-      .toLowerCase()
-      .replace(/…/g, '')
-      .replace(/\.\s*$/, '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 160);
-
   const stripBrandPrefix = (line, brandName) => {
     if (!brandName) return line;
-    const pattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*Sponsored\\s*`, 'i');
-    const stripped = line.replace(pattern, '').trim();
-    if (stripped) return stripped;
-    const brandPattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    return line.replace(brandPattern, '').trim();
+    const safe = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sponsoredPattern = new RegExp(`^${safe}\\s*Sponsored\\s*`, 'i');
+    if (sponsoredPattern.test(line)) return line.replace(sponsoredPattern, '');
+    const brandPattern = new RegExp(`^${safe}\\b`, 'i');
+    if (brandPattern.test(line)) return line.replace(brandPattern, '');
+    return line;
   };
 
   const splitSegmentsByPattern = (segment, regex) => {
-    const results = [];
+    const fragments = [];
     let remaining = segment;
     while (remaining) {
       const match = remaining.match(regex);
       if (!match || typeof match.index !== 'number') {
-        if (remaining.trim()) results.push(remaining.trim());
+        fragments.push(remaining);
         break;
       }
-      const before = remaining.slice(0, match.index).trim();
-      const after = remaining.slice(match.index + match[0].length).trim();
-      if (before) results.push(before);
-      results.push(match[0].trim());
+      const before = remaining.slice(0, match.index);
+      const after = remaining.slice(match.index + match[0].length);
+      if (before) fragments.push(before);
+      fragments.push(match[0]);
       remaining = after;
     }
-    return results;
+    return fragments.length ? fragments : [''];
   };
 
   const splitLineSegments = (line) => {
@@ -330,32 +328,65 @@
     if (idx > -1) {
       const prefix = lower.slice(0, idx);
       if (shouldDropPrefix(prefix)) {
-        return line.slice(idx + 'sponsored'.length).trim();
+        return line.slice(idx + 'sponsored'.length);
       }
     }
     return line;
   };
 
+  const normalizeForDetection = (value) => value.replace(/\u200b/g, '').replace(TIMESTAMP_PATTERN, '').trim();
+
   const cleanSegments = (text, brandName = '') => {
     if (!text) return [];
     const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
     const segments = [];
-    normalized
-      .split(/\n+/)
-      .map((line) => removeMetadataPrefix(stripBrandPrefix(line.trim(), brandName)))
-      .filter(Boolean)
-      .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
-      .filter(Boolean)
-      .forEach((line) => {
-        splitLineSegments(line)
-          .map((segment) => segment.trim())
-          .filter(Boolean)
-          .filter((segment) => !AD_COPY_NOISE.some((pattern) => pattern.test(segment)))
-          .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
-          .forEach((segment) => segments.push(segment));
+    normalized.split('\n').forEach((line) => {
+      const withoutBrand = stripBrandPrefix(line, brandName);
+      const cleanedLine = removeMetadataPrefix(withoutBrand);
+      const wasOriginalBlank = !line.trim();
+      if (!cleanedLine) {
+        if (wasOriginalBlank) {
+          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+        }
+        return;
+      }
+      splitLineSegments(cleanedLine).forEach((segment) => {
+        if (segment === '') {
+          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+          return;
+        }
+        const detection = normalizeForDetection(segment);
+        if (!detection) {
+          segments.push({ raw: segment, detection: '', lower: '', isBlank: true });
+          return;
+        }
+        if (AD_COPY_NOISE.some((pattern) => pattern.test(detection))) return;
+        segments.push({
+          raw: segment,
+          detection,
+          lower: detection.toLowerCase(),
+          isBlank: false
+        });
       });
+    });
     return segments;
   };
+
+  const removeTruncatedPreviews = (segments) =>
+    segments.filter((segment, index) => {
+      if (!segment.detection) return true;
+      if (!ELLIPSIS_LINE_PATTERN.test(segment.detection)) return true;
+      const base = segment.detection.replace(ELLIPSIS_LINE_PATTERN, '').trim();
+      if (!base) return false;
+      for (let i = index + 1; i < segments.length; i += 1) {
+        const next = segments[i];
+        if (!next.detection) continue;
+        if (next.detection.toLowerCase().startsWith(base.toLowerCase())) {
+          return false;
+        }
+      }
+      return true;
+    });
 
   const categorizeSegments = (segments) => {
     const primary = [];
@@ -363,32 +394,33 @@
     let domain = '';
     let headline = '';
     let ctaLabel = '';
-    segments.forEach((segment) => {
-      const normalized = segment.trim();
-      if (!normalized) return;
-      const lowered = normalized.toLowerCase();
-      if (!ctaLabel && CTA_LABEL_SET.has(lowered)) {
-        ctaLabel = normalized;
+    segments.forEach(({ raw, detection, lower, isBlank }) => {
+      if (isBlank && raw === '') {
+        primary.push('');
         return;
       }
-      const domainCandidate = normalized.replace(/^https?:\/\//i, '');
+      if (!detection) return;
+      if (!ctaLabel && CTA_LABEL_SET.has(lower)) {
+        ctaLabel = detection;
+        return;
+      }
+      const domainCandidate = detection.replace(/^https?:\/\//i, '');
       if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
-        domain = normalized;
+        domain = detection;
         return;
       }
       if (domain && !headline) {
-        headline = normalized;
+        headline = detection;
         return;
       }
       if (domain && headline) {
-        descriptionParts.push(normalized);
+        descriptionParts.push(detection);
         return;
       }
-      primary.push(normalized);
+      primary.push(raw);
     });
-    const primaryText = primary.join('\n').trim();
     return {
-      primaryText,
+      primaryText: primary.join('\n'),
       domain,
       headline,
       description: descriptionParts.join(' ').trim(),
@@ -396,19 +428,93 @@
     };
   };
 
-  const extractTextSegments = (card, brandName) => {
-    const rawText = getCardText(card);
-    const segments = cleanSegments(rawText, brandName);
-    const result = categorizeSegments(segments);
-    if (!result.primaryText && rawText.trim()) {
-      result.primaryText = rawText.trim();
+  const getMainMediaElement = (card) => {
+    const videos = Array.from(card.querySelectorAll('video'));
+    const visibleVideo = videos.find((v) => v.offsetWidth > 0 && v.offsetHeight > 0);
+    if (visibleVideo) return visibleVideo;
+    const images = Array.from(card.querySelectorAll('img'));
+    const sorted = images
+      .map((img) => ({ img, area: img.offsetWidth * img.offsetHeight }))
+      .sort((a, b) => b.area - a.area);
+    if (sorted.length > 0 && sorted[0].area > 10000) return sorted[0].img;
+    return null;
+  };
+
+  const getTextFromRange = (root, startNode, endNode) => {
+    const range = document.createRange();
+    if (startNode) range.setStartAfter(startNode);
+    else range.setStart(root, 0);
+    if (endNode) range.setEndBefore(endNode);
+    else range.setEndAfter(root.lastChild || root);
+    const fragment = range.cloneContents();
+    const div = document.createElement('div');
+    div.appendChild(fragment);
+    div.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
+    return div.innerText || '';
+  };
+
+  const cleanBodyText = (text, brandName) => {
+    if (!text) return '';
+    const cleaned = text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
+    const lines = cleaned.split('\n');
+    const filteredLines = [];
+    let passedHeader = false;
+    for (let i = 0; i < lines.length; i += 1) {
+      let line = lines[i].trim();
+      if (!line) {
+        if (passedHeader) filteredLines.push('');
+        continue;
+      }
+      if (shouldDropPrefix(line) || AD_COPY_NOISE.some((p) => p.test(line))) continue;
+      if (!passedHeader) {
+        if (line.toLowerCase() === 'sponsored' || (brandName && line.toLowerCase().includes(brandName.toLowerCase()))) {
+          line = stripBrandPrefix(line, brandName);
+          line = removeMetadataPrefix(line);
+          if (!line.trim()) continue;
+        }
+        passedHeader = true;
+      }
+      filteredLines.push(line);
     }
-    return { rawText, ...result };
+    return filteredLines.join('\n').trim();
+  };
+
+  const extractTextSegments = (card, brandName, brandElement) => {
+    const rawText = getCardText(card);
+    let primaryText = '';
+    let footerResult = {};
+
+    const mediaElement = getMainMediaElement(card);
+    if (brandElement && mediaElement) {
+      const bodyRaw = getTextFromRange(card, brandElement, mediaElement);
+      primaryText = cleanBodyText(bodyRaw, brandName);
+
+      const footerRaw = getTextFromRange(card, mediaElement, null);
+      const footerSegments = removeTruncatedPreviews(cleanSegments(footerRaw, brandName));
+      footerResult = categorizeSegments(footerSegments);
+    } else {
+      const segments = removeTruncatedPreviews(cleanSegments(rawText, brandName));
+      footerResult = categorizeSegments(segments);
+      primaryText = footerResult.primaryText;
+    }
+
+    if (!primaryText && rawText.trim()) {
+      primaryText = rawText.trim();
+    }
+
+    return {
+      rawText,
+      primaryText,
+      domain: footerResult.domain || '',
+      headline: footerResult.headline || '',
+      description: footerResult.description || '',
+      ctaLabel: footerResult.ctaLabel || ''
+    };
   };
 
   const captureCard = (card) => {
-    const { brandName, brandLogo } = collectBrandInfo(card);
-    const { rawText, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
+    const { brandName, brandLogo, brandElement } = collectBrandInfo(card);
+    const { rawText, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName, brandElement);
     const aspectRatio = detectAspectRatio(card);
     const payload = {
       id: createId(),

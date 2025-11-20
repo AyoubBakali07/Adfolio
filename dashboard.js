@@ -151,39 +151,32 @@ const CTA_LABELS = [
 const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
 const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
 
-const normalizeLineKey = (line) =>
-  line
-    .toLowerCase()
-    .replace(/…/g, '')
-    .replace(/\.\s*$/, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 160);
-
 const stripBrandPrefix = (line, brandName) => {
   if (!brandName) return line;
-  const pattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*Sponsored\\s*`, 'i');
-  const stripped = line.replace(pattern, '').trim();
-  if (stripped) return stripped;
-  const brandPattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-  return line.replace(brandPattern, '').trim();
+  const safe = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const sponsoredPattern = new RegExp(`^${safe}\\s*Sponsored\\s*`, 'i');
+  if (sponsoredPattern.test(line)) return line.replace(sponsoredPattern, '');
+  const brandPattern = new RegExp(`^${safe}\\b`, 'i');
+  if (brandPattern.test(line)) return line.replace(brandPattern, '');
+  return line;
 };
 
 const splitSegmentsByPattern = (segment, regex) => {
-  const results = [];
+  const fragments = [];
   let remaining = segment;
   while (remaining) {
     const match = remaining.match(regex);
     if (!match || typeof match.index !== 'number') {
-      if (remaining.trim()) results.push(remaining.trim());
+      fragments.push(remaining);
       break;
     }
-    const before = remaining.slice(0, match.index).trim();
-    const after = remaining.slice(match.index + match[0].length).trim();
-    if (before) results.push(before);
-    results.push(match[0].trim());
+    const before = remaining.slice(0, match.index);
+    const after = remaining.slice(match.index + match[0].length);
+    if (before) fragments.push(before);
+    fragments.push(match[0]);
     remaining = after;
   }
-  return results;
+  return fragments.length ? fragments : [''];
 };
 
 const splitLineSegments = (line) => {
@@ -204,32 +197,65 @@ const removeMetadataPrefix = (line) => {
   if (idx > -1) {
     const prefix = lower.slice(0, idx);
     if (metadataPrefixPattern.test(prefix)) {
-      return line.slice(idx + 'sponsored'.length).trim();
+      return line.slice(idx + 'sponsored'.length);
     }
   }
   return line;
 };
 
+const normalizeForDetection = (value) => value.replace(/\u200b/g, '').replace(TIMESTAMP_PATTERN, '').trim();
+
 const cleanSegments = (text, brandName = '') => {
   if (!text) return [];
   const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
   const segments = [];
-  normalized
-    .split(/\n+/)
-    .map((line) => removeMetadataPrefix(stripBrandPrefix(line.trim(), brandName)))
-    .filter(Boolean)
-    .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      splitLineSegments(line)
-        .map((segment) => segment.trim())
-        .filter(Boolean)
-        .filter((segment) => !AD_COPY_NOISE.some((pattern) => pattern.test(segment)))
-        .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
-        .forEach((segment) => segments.push(segment));
+  normalized.split('\n').forEach((line) => {
+    const withoutBrand = stripBrandPrefix(line, brandName);
+    const cleanedLine = removeMetadataPrefix(withoutBrand);
+    const wasOriginalBlank = !line.trim();
+    if (!cleanedLine) {
+      if (wasOriginalBlank) {
+        segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+      }
+      return;
+    }
+    splitLineSegments(cleanedLine).forEach((segment) => {
+      if (segment === '') {
+        segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+        return;
+      }
+      const detection = normalizeForDetection(segment);
+      if (!detection) {
+        segments.push({ raw: segment, detection: '', lower: '', isBlank: true });
+        return;
+      }
+      if (AD_COPY_NOISE.some((pattern) => pattern.test(detection))) return;
+      segments.push({
+        raw: segment,
+        detection,
+        lower: detection.toLowerCase(),
+        isBlank: false
+      });
     });
+  });
   return segments;
 };
+
+const removeTruncatedPreviews = (segments) =>
+  segments.filter((segment, index) => {
+    if (!segment.detection) return true;
+    if (!ELLIPSIS_LINE_PATTERN.test(segment.detection)) return true;
+    const base = segment.detection.replace(ELLIPSIS_LINE_PATTERN, '').trim();
+    if (!base) return false;
+    for (let i = index + 1; i < segments.length; i += 1) {
+      const next = segments[i];
+      if (!next.detection) continue;
+      if (next.detection.toLowerCase().startsWith(base.toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  });
 
 const categorizeSegments = (segments) => {
   const primary = [];
@@ -237,31 +263,33 @@ const categorizeSegments = (segments) => {
   let domain = '';
   let headline = '';
   let ctaLabel = '';
-  segments.forEach((segment) => {
-    const normalized = segment.trim();
-    if (!normalized) return;
-    const lowered = normalized.toLowerCase();
-    if (!ctaLabel && CTA_LABEL_SET.has(lowered)) {
-      ctaLabel = normalized;
+  segments.forEach(({ raw, detection, lower, isBlank }) => {
+    if (isBlank && raw === '') {
+      primary.push('');
       return;
     }
-    const domainCandidate = normalized.replace(/^https?:\/\//i, '');
+    if (!detection) return;
+    if (!ctaLabel && CTA_LABEL_SET.has(lower)) {
+      ctaLabel = detection;
+      return;
+    }
+    const domainCandidate = detection.replace(/^https?:\/\//i, '');
     if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
-      domain = normalized;
+      domain = detection;
       return;
     }
     if (domain && !headline) {
-      headline = normalized;
+      headline = detection;
       return;
     }
     if (domain && headline) {
-      descriptionParts.push(normalized);
+      descriptionParts.push(detection);
       return;
     }
-    primary.push(normalized);
+    primary.push(raw);
   });
   return {
-    primaryText: primary.join('\n').trim(),
+    primaryText: primary.join('\n'),
     domain,
     headline,
     description: descriptionParts.join(' ').trim(),
@@ -270,7 +298,7 @@ const categorizeSegments = (segments) => {
 };
 
 const deriveTextSegments = (text, brandName = '') => {
-  const segments = cleanSegments(text, brandName);
+  const segments = removeTruncatedPreviews(cleanSegments(text, brandName));
   const categorized = categorizeSegments(segments);
   if (!categorized.primaryText && text?.trim()) categorized.primaryText = text.trim();
   return categorized;
