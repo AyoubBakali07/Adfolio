@@ -283,8 +283,7 @@
     'show more',
     'see translation',
     'continue reading',
-    'see summary details',
-    'see ad details'
+    'see summary details'
   ];
   const EXPAND_SELECTORS = ['[data-ad-preview="see_more_link"]', '[role="button"]', 'button'];
 
@@ -515,11 +514,13 @@
     if (!result.primaryText && rawText.trim()) {
       result.primaryText = rawText;
     }
-    const fullAdCopy = segments
-      .map(({ raw, isBlank }) => (isBlank ? '' : raw))
+    const primaryOnly = (result.primaryText || '')
+      .split('\n')
+      .map((line) => line.trimEnd())
       .join('\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    const fullAdCopy = primaryOnly || rawText.trim();
     return { rawText, fullAdCopy, ...result };
   };
 
