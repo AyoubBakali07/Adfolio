@@ -17,6 +17,14 @@ let items = [];
 let searchQuery = '';
 const pendingDeletions = new Map();
 
+const cancelPendingDeletions = () => {
+  pendingDeletions.forEach(({ timer, toastDismiss }) => {
+    if (timer) clearTimeout(timer);
+    if (typeof toastDismiss === 'function') toastDismiss();
+  });
+  pendingDeletions.clear();
+};
+
 const ensureToastHost = () => {
   let host = document.querySelector('.toast-host');
   if (!host) {
@@ -113,11 +121,16 @@ const getHostname = (url) => {
 };
 
 const AD_COPY_NOISE = [
+  /^active$/i,
   /^activelibrary id/i,
+  /^library id/i,
   /^started running/i,
-  /^platforms/i,
+  /^platforms?/i,
+  /^\d+\s+ads use this creative/i,
   /^open dropdown/i,
   /^see ad details/i,
+  /^see summary details/i,
+  /^see translation/i,
   /^sponsored$/i,
   /^facebook ad library/i,
   /^ad library\b/i,
@@ -278,6 +291,8 @@ const deriveTextSegments = (text, brandName = '') => {
 
 const getAdCopy = (item) => {
   const extra = item?.extra || {};
+  const full = (extra.fullAdCopy || extra.rawText || item?.text || '').trim();
+  if (full) return full;
   if (extra.adCopy) return extra.adCopy;
   const sourceText = extra.rawText || item?.text || '';
   const derived = deriveTextSegments(sourceText, item?.brandName || '');
@@ -679,6 +694,7 @@ const clearAllItems = async () => {
   if (!items.length) return;
   if (!confirm('Clear every saved ad? This cannot be undone.')) return;
   try {
+    cancelPendingDeletions();
     await sendMessage('CLEAR_ALL_ITEMS');
     items = [];
     renderItems();

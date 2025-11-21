@@ -22,6 +22,8 @@ const storageSet = (obj) =>
     });
   });
 
+const MAX_ITEMS = 300;
+
 const ensureStorageArray = async () => {
   const existing = await storageGet({ [STORAGE_KEY]: [] });
   if (!Array.isArray(existing[STORAGE_KEY])) {
@@ -40,8 +42,18 @@ const handlers = {
   async SAVE_AD_ITEM({ item }) {
     if (!item) throw new Error('Missing item payload');
     const items = await readItems();
-    items.unshift(item);
-    await writeItems(items);
+    const withoutDuplicate = items.filter((entry) => entry.id !== item.id);
+    withoutDuplicate.unshift(item);
+    const trimmed = withoutDuplicate.slice(0, MAX_ITEMS);
+    try {
+      await writeItems(trimmed);
+    } catch (error) {
+      const message = error?.message || String(error);
+      if (/QUOTA_BYTES/i.test(message)) {
+        throw new Error('Storage is full. Remove some saved ads and try again.');
+      }
+      throw error;
+    }
     return item;
   },
   async GET_AD_ITEMS() {

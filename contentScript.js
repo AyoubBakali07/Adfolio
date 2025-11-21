@@ -103,10 +103,57 @@
     }
   };
 
+  const parseSrcsetDescriptor = (descriptor) => {
+    const match = descriptor.trim().match(/(\d+(?:\.\d+)?)(w|x)/i);
+    if (!match) return 0;
+    const value = Number(match[1]);
+    if (!Number.isFinite(value)) return 0;
+    return match[2].toLowerCase() === 'x' ? value * 1000 : value;
+  };
+
+  const collectSrcsetEntries = (srcset, register) => {
+    if (!srcset) return;
+    srcset
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .forEach((entry, index) => {
+        const parts = entry.split(/\s+/);
+        const url = normalizeUrl(parts[0]);
+        if (!url) return;
+        const descriptor = parts[1] || '';
+        const score = descriptor ? parseSrcsetDescriptor(descriptor) : index + 1;
+        register(url, score);
+      });
+  };
+
+  const getBestImageSource = (img) => {
+    const scores = new Map();
+    const register = (url, score) => {
+      if (!url) return;
+      const existing = scores.get(url);
+      if (typeof existing === 'number' && existing >= score) return;
+      scores.set(url, score);
+    };
+    collectSrcsetEntries(img.getAttribute('srcset'), register);
+    const picture = img.closest('picture');
+    if (picture) {
+      picture.querySelectorAll('source').forEach((source) => {
+        collectSrcsetEntries(source.getAttribute('srcset'), register);
+      });
+    }
+    if (scores.size) {
+      return Array.from(scores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([url]) => url)[0];
+    }
+    return normalizeUrl(img.currentSrc || img.src);
+  };
+
   const getImageCandidates = (card) => {
     const candidates = [];
     card.querySelectorAll('img').forEach((img) => {
-      const source = normalizeUrl(img.currentSrc || img.src);
+      const source = getBestImageSource(img);
       if (!source) return;
       const rect = img.getBoundingClientRect();
       const width = Math.round(rect.width || img.naturalWidth || img.width || 0);
@@ -231,51 +278,64 @@
 
   const sanitize = (text) => text.replace(/\s+/g, ' ').trim();
 
+  const EXPAND_LABELS = [
+    'see more',
+    'show more',
+    'see translation',
+    'continue reading',
+    'see summary details',
+    'see ad details'
+  ];
+  const EXPAND_SELECTORS = ['[data-ad-preview="see_more_link"]', '[role="button"]', 'button'];
+
+  const expandCollapsibleSections = (card) => {
+    let expanded = false;
+    const nodes = Array.from(card.querySelectorAll(EXPAND_SELECTORS.join(', ')));
+    nodes.forEach((node) => {
+      const label = (node.innerText || node.getAttribute('aria-label') || '').trim().toLowerCase();
+      if (!label) return;
+      if (node.getAttribute('aria-expanded') === 'true') return;
+      if (EXPAND_LABELS.some((value) => label === value || label.startsWith(`${value} `))) {
+        node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        expanded = true;
+      }
+    });
+    return expanded;
+  };
+
   const getCardText = (card) => {
     const clone = card.cloneNode(true);
     clone.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
-
-    // Insert newlines after block elements to prevent run-on text
-    const blockElements = clone.querySelectorAll('div, p, h1, h2, h3, h4, h5, h6, li, br');
-    blockElements.forEach(el => {
-      el.after(document.createTextNode('\n'));
-    });
-
     const div = document.createElement('div');
     div.style.position = 'absolute';
     div.style.left = '-9999px';
     div.style.top = '-9999px';
     div.style.whiteSpace = 'pre-wrap';
     div.appendChild(clone);
-
     document.body.appendChild(div);
     const text = div.innerText || '';
     document.body.removeChild(div);
-
-    return text;
+    return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
   };
 
   const AD_COPY_NOISE = [
+    /^active$/i,
     /^activelibrary id/i,
     /^library id/i,
-    /^active\s*library\s*id/i,
     /^started running/i,
-    /^platforms/i,
+    /^platforms?/i,
+    /^\d+\s+ads use this creative/i,
     /^open dropdown/i,
     /^see ad details/i,
+    /^see summary details/i,
+    /^see translation/i,
     /^sponsored$/i,
     /^facebook ad library/i,
     /^ad library\b/i,
     /^landing page\b/i,
     /^saved \d+/i,
     /^show more$/i,
-    /^show less$/i,
-    /^see summary details/i,
-    /^total active time/i,
-    /^\d+ ads use this creative/i,
-    /^missing teeth\?/i // specific noise from example if it's not part of ad? No, that looks like headline.
-    // Wait, "Missing Teeth?..." in the user image IS the headline/ad text.
-    // The noise is "ActiveLibrary ID: ... Started running on ... Platforms ... 2 ads use this creative ... See summary details ... Sponsored"
+    /^show less$/i
   ];
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
@@ -302,39 +362,32 @@
   const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
   const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
 
-  const normalizeLineKey = (line) =>
-    line
-      .toLowerCase()
-      .replace(/…/g, '')
-      .replace(/\.\s*$/, '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 160);
-
   const stripBrandPrefix = (line, brandName) => {
     if (!brandName) return line;
-    const pattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*Sponsored\\s*`, 'i');
-    const stripped = line.replace(pattern, '').trim();
-    if (stripped) return stripped;
-    const brandPattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    return line.replace(brandPattern, '').trim();
+    const safe = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sponsoredPattern = new RegExp(`^${safe}\\s*Sponsored\\s*`, 'i');
+    if (sponsoredPattern.test(line)) return line.replace(sponsoredPattern, '');
+    const brandPattern = new RegExp(`^${safe}\\b`, 'i');
+    if (brandPattern.test(line)) return line.replace(brandPattern, '');
+    return line;
   };
 
   const splitSegmentsByPattern = (segment, regex) => {
-    const results = [];
+    const fragments = [];
     let remaining = segment;
     while (remaining) {
       const match = remaining.match(regex);
       if (!match || typeof match.index !== 'number') {
-        if (remaining.trim()) results.push(remaining.trim());
+        fragments.push(remaining);
         break;
       }
-      const before = remaining.slice(0, match.index).trim();
-      const after = remaining.slice(match.index + match[0].length).trim();
-      if (before) results.push(before);
-      results.push(match[0].trim());
+      const before = remaining.slice(0, match.index);
+      const after = remaining.slice(match.index + match[0].length);
+      if (before) fragments.push(before);
+      fragments.push(match[0]);
       remaining = after;
     }
-    return results;
+    return fragments.length ? fragments : [''];
   };
 
   const splitLineSegments = (line) => {
@@ -351,39 +404,69 @@
 
   const removeMetadataPrefix = (line) => {
     const lower = line.toLowerCase();
-    // Aggressive check for "Sponsored" at the end of a metadata block
-    if (lower === 'sponsored') return '';
-
     const idx = lower.lastIndexOf('sponsored');
     if (idx > -1) {
       const prefix = lower.slice(0, idx);
       if (shouldDropPrefix(prefix)) {
-        return line.slice(idx + 'sponsored'.length).trim();
+        return line.slice(idx + 'sponsored'.length);
       }
     }
     return line;
   };
 
+  const normalizeForDetection = (value) => value.replace(/\u200b/g, '').replace(TIMESTAMP_PATTERN, '').trim();
+
   const cleanSegments = (text, brandName = '') => {
     if (!text) return [];
     const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
     const segments = [];
-    normalized
-      .split(/\n+/)
-      .map((line) => removeMetadataPrefix(stripBrandPrefix(line.trim(), brandName)))
-      .filter(Boolean)
-      .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
-      .filter(Boolean)
-      .forEach((line) => {
-        splitLineSegments(line)
-          .map((segment) => segment.trim())
-          .filter(Boolean)
-          .filter((segment) => !AD_COPY_NOISE.some((pattern) => pattern.test(segment)))
-          .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
-          .forEach((segment) => segments.push(segment));
+    normalized.split('\n').forEach((line) => {
+      const withoutBrand = stripBrandPrefix(line, brandName);
+      const cleanedLine = removeMetadataPrefix(withoutBrand);
+      const wasOriginalBlank = !line.trim();
+      if (!cleanedLine) {
+        if (wasOriginalBlank) {
+          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+        }
+        return;
+      }
+      splitLineSegments(cleanedLine).forEach((segment) => {
+        if (segment === '') {
+          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
+          return;
+        }
+        const detection = normalizeForDetection(segment);
+        if (!detection) {
+          segments.push({ raw: segment, detection: '', lower: '', isBlank: true });
+          return;
+        }
+        if (AD_COPY_NOISE.some((pattern) => pattern.test(detection))) return;
+        segments.push({
+          raw: segment,
+          detection,
+          lower: detection.toLowerCase(),
+          isBlank: false
+        });
       });
+    });
     return segments;
   };
+
+  const removeTruncatedPreviews = (segments) =>
+    segments.filter((segment, index) => {
+      if (!segment.detection) return true;
+      if (!ELLIPSIS_LINE_PATTERN.test(segment.detection)) return true;
+      const base = segment.detection.replace(ELLIPSIS_LINE_PATTERN, '').trim();
+      if (!base) return false;
+      for (let i = index + 1; i < segments.length; i += 1) {
+        const next = segments[i];
+        if (!next.detection) continue;
+        if (next.detection.toLowerCase().startsWith(base.toLowerCase())) {
+          return false;
+        }
+      }
+      return true;
+    });
 
   const categorizeSegments = (segments) => {
     const primary = [];
@@ -391,32 +474,33 @@
     let domain = '';
     let headline = '';
     let ctaLabel = '';
-    segments.forEach((segment) => {
-      const normalized = segment.trim();
-      if (!normalized) return;
-      const lowered = normalized.toLowerCase();
-      if (!ctaLabel && CTA_LABEL_SET.has(lowered)) {
-        ctaLabel = normalized;
+    segments.forEach(({ raw, detection, lower, isBlank }) => {
+      if (isBlank && raw === '') {
+        primary.push('');
         return;
       }
-      const domainCandidate = normalized.replace(/^https?:\/\//i, '');
+      if (!detection) return;
+      if (!ctaLabel && CTA_LABEL_SET.has(lower)) {
+        ctaLabel = detection;
+        return;
+      }
+      const domainCandidate = detection.replace(/^https?:\/\//i, '');
       if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
-        domain = normalized;
+        domain = detection;
         return;
       }
       if (domain && !headline) {
-        headline = normalized;
+        headline = detection;
         return;
       }
       if (domain && headline) {
-        descriptionParts.push(normalized);
+        descriptionParts.push(detection);
         return;
       }
-      primary.push(normalized);
+      primary.push(raw);
     });
-    const primaryText = primary.join('\n').trim();
     return {
-      primaryText,
+      primaryText: primary.join('\n'),
       domain,
       headline,
       description: descriptionParts.join('\n').trim(),
@@ -426,24 +510,31 @@
 
   const extractTextSegments = (card, brandName) => {
     const rawText = getCardText(card);
-    const segments = cleanSegments(rawText, brandName);
+    const segments = removeTruncatedPreviews(cleanSegments(rawText, brandName));
     const result = categorizeSegments(segments);
     if (!result.primaryText && rawText.trim()) {
-      result.primaryText = rawText.trim();
+      result.primaryText = rawText;
     }
-    return { rawText, ...result };
+    const fullAdCopy = segments
+      .map(({ raw, isBlank }) => (isBlank ? '' : raw))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return { rawText, fullAdCopy, ...result };
   };
 
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
-    const { rawText, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
+    const { rawText, fullAdCopy, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
+    const hasPrimary = typeof primaryText === 'string' && primaryText.replace(/\s/g, '').length > 0;
+    const finalAdCopy = fullAdCopy || (hasPrimary ? primaryText : rawText);
     const aspectRatio = detectAspectRatio(card);
     const payload = {
       id: createId(),
       platform: detectPlatform(),
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
-      text: primaryText,
+      text: finalAdCopy,
       imageUrls: collectImages(card),
       videoUrls: collectVideos(card),
       brandName,
@@ -454,7 +545,8 @@
       payload.extra.aspectRatio = aspectRatio;
     }
     payload.extra.rawText = rawText;
-    payload.extra.adCopy = primaryText;
+    payload.extra.adCopy = finalAdCopy;
+    payload.extra.fullAdCopy = finalAdCopy;
     payload.extra.domain = domain || '';
     payload.extra.headline = headline || '';
     payload.extra.linkDescription = description || '';
@@ -480,26 +572,74 @@
     if (label) label.textContent = value;
   };
 
-  const handleSave = (card, button) => {
-    const payload = captureCard(card);
-    if (!payload.text && !payload.imageUrls.length && !payload.videoUrls.length) {
-      showToast('Swipekit: nothing to capture', true);
+  const expandAdCopy = async (card) => {
+    let attempts = 0;
+    let expanded = false;
+    while (attempts < 3) {
+      const didExpand = expandCollapsibleSections(card);
+      expanded = expanded || didExpand;
+      if (!didExpand) break;
+      attempts += 1;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      } catch (error) {
+        console.warn('Swipekit: Expansion wait failed', error);
+        break;
+      }
+    }
+    return expanded;
+  };
+
+  const handleSave = async (card, button) => {
+    if (!chrome.runtime?.id) {
+      showToast('Extension updated. Please refresh page.', true);
       return;
     }
+
     button.disabled = true;
     const original = button.dataset.defaultLabel || 'Save';
     updateButtonLabel(button, 'Saving...');
-    chrome.runtime.sendMessage({ type: 'SAVE_AD_ITEM', item: payload }, (response) => {
+
+    try {
+      await expandAdCopy(card);
+    } catch (e) {
+      console.warn('Swipekit: Expansion error', e);
+    }
+
+    // Small delay to ensure DOM has updated after expansion
+    await new Promise(resolve => requestAnimationFrame(resolve));
+
+    const payload = captureCard(card);
+    const hasCopy = typeof payload.text === 'string' && payload.text.replace(/\s/g, '').length > 0;
+    if (!hasCopy && !payload.imageUrls.length && !payload.videoUrls.length) {
+      updateButtonLabel(button, original);
       button.disabled = false;
-      if (chrome.runtime.lastError || !response?.ok) {
-        updateButtonLabel(button, original);
+      showToast('Swipekit: nothing to capture', true);
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage({ type: 'SAVE_AD_ITEM', item: payload }, (response) => {
+        button.disabled = false;
+        if (chrome.runtime.lastError || !response?.ok) {
+          const errorMessage = response?.error || chrome.runtime.lastError?.message || 'Swipekit save failed';
+          updateButtonLabel(button, original);
+          showToast(errorMessage, true);
+          return;
+        }
+        updateButtonLabel(button, 'Saved');
+        showToast('Saved to Swipe');
+        setTimeout(() => updateButtonLabel(button, original), 1500);
+      });
+    } catch (e) {
+      button.disabled = false;
+      updateButtonLabel(button, original);
+      if (e.message.includes('Extension context invalidated')) {
+        showToast('Please refresh the page', true);
+      } else {
         showToast('Swipekit save failed', true);
-        return;
       }
-      updateButtonLabel(button, 'Saved');
-      showToast('Saved to Swipe');
-      setTimeout(() => updateButtonLabel(button, original), 1500);
-    });
+    }
   };
 
   const createSaveButton = (card) => {
@@ -578,16 +718,34 @@
     });
   };
 
+  const getMountRoot = () => {
+    const platform = detectPlatform();
+    if (platform === 'instagram') return document.querySelector('main') || document.body;
+    if (platform === 'facebook-ad-library') return document.querySelector('[role="main"]') || document.body;
+    if (platform === 'facebook-feed') return document.querySelector('[role="feed"]') || document.body;
+    return document.body;
+  };
+
   const init = () => {
     injectStyles();
     scan();
-    const observer = new MutationObserver((mutations) => {
-      if (mutations.some((mutation) => mutation.addedNodes.length)) {
-        scan();
+
+    const setupObserver = (attempts = 5) => {
+      const target = getMountRoot();
+      if (!target) {
+        if (attempts > 0) setTimeout(() => setupObserver(attempts - 1), 600);
+        return;
       }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setInterval(scan, 2000);
+
+      const observer = new MutationObserver((mutations) => {
+        if (mutations.some((mutation) => mutation.addedNodes.length)) {
+          scan();
+        }
+      });
+      observer.observe(target, { childList: true, subtree: true });
+    };
+
+    setupObserver();
   };
 
   if (document.readyState === 'loading') {
