@@ -223,9 +223,12 @@ const removeMetadataPrefix = (line) => {
   return line;
 };
 
+const normalizeValue = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+
 const cleanSegments = (text, brandName = '') => {
   if (!text) return [];
   const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
+  const brandKey = brandName ? normalizeValue(brandName) : '';
   const segments = [];
   normalized
     .split(/\n+/)
@@ -241,7 +244,10 @@ const cleanSegments = (text, brandName = '') => {
         .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
         .forEach((segment) => segments.push(segment));
     });
-  return segments;
+  return segments.filter((segment) => {
+    if (!brandKey) return true;
+    return normalizeValue(segment) !== brandKey;
+  });
 };
 
 const categorizeSegments = (segments) => {
@@ -292,7 +298,11 @@ const deriveTextSegments = (text, brandName = '') => {
 const getAdCopy = (item) => {
   const extra = item?.extra || {};
   const full = (extra.fullAdCopy || extra.rawText || item?.text || '').trim();
-  if (full) return full;
+  if (full) {
+    const cleaned = cleanSegments(full, item?.brandName || '').join('\n').trim();
+    if (cleaned) return cleaned;
+    return full;
+  }
   if (extra.adCopy) return extra.adCopy;
   const sourceText = extra.rawText || item?.text || '';
   const derived = deriveTextSegments(sourceText, item?.brandName || '');
@@ -379,8 +389,6 @@ const bindEvent = (selector, eventName, handler, { silent = false } = {}) => {
 const createMediaElement = (item) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'ad-card-media';
-  const storedRatio = getStoredAspectRatio(item);
-  if (storedRatio) applyAspectRatio(wrapper, storedRatio);
   const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
   const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
 
@@ -389,7 +397,6 @@ const createMediaElement = (item) => {
     video.muted = true;
     video.playsInline = true;
     video.controls = true;
-    if (!storedRatio) watchMediaForAspectRatio(video, wrapper);
     video.src = videoUrl;
     wrapper.appendChild(video);
     return wrapper;
@@ -397,7 +404,6 @@ const createMediaElement = (item) => {
 
   if (imageUrl) {
     const image = document.createElement('img');
-    if (!storedRatio) watchMediaForAspectRatio(image, wrapper);
     image.src = imageUrl;
     image.alt = 'Ad creative';
     wrapper.appendChild(image);

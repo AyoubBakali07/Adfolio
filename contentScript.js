@@ -327,6 +327,7 @@
     /^open dropdown/i,
     /^see ad details/i,
     /^see summary details/i,
+    /^this ad has multiple versions$/i,
     /^see translation/i,
     /^sponsored$/i,
     /^facebook ad library/i,
@@ -415,9 +416,12 @@
 
   const normalizeForDetection = (value) => value.replace(/\u200b/g, '').replace(TIMESTAMP_PATTERN, '').trim();
 
+  const normalizeValue = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+
   const cleanSegments = (text, brandName = '') => {
     if (!text) return [];
     const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
+    const brandKey = brandName ? normalizeValue(brandName) : '';
     const segments = [];
     normalized.split('\n').forEach((line) => {
       const withoutBrand = stripBrandPrefix(line, brandName);
@@ -448,7 +452,12 @@
         });
       });
     });
-    return segments;
+    return segments.filter(({ raw, detection, lower, isBlank }) => {
+      if (isBlank) return true;
+      if (brandKey && normalizeValue(raw) === brandKey) return false;
+      if (brandKey && normalizeValue(detection) === brandKey) return false;
+      return true;
+    });
   };
 
   const removeTruncatedPreviews = (segments) =>
