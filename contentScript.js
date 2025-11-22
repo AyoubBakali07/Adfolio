@@ -15,15 +15,6 @@
         width: 100%;
         margin-top: 12px;
       }
-      .swipekit-save-btn-wrapper.swipekit-overlay {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        width: auto;
-        margin: 0;
-        z-index: 9999;
-        pointer-events: auto;
-      }
       .swipekit-save-btn-clean {
         width: 100%;
         display: inline-flex;
@@ -161,19 +152,12 @@
 
   const getImageCandidates = (card) => {
     const candidates = [];
-    // Modal specific: Look for the main image in the theater view
-    const isModal = card.getAttribute('role') === 'dialog';
-    const images = card.querySelectorAll('img');
-
-    images.forEach((img) => {
+    card.querySelectorAll('img').forEach((img) => {
       const source = getBestImageSource(img);
       if (!source) return;
       const rect = img.getBoundingClientRect();
       const width = Math.round(rect.width || img.naturalWidth || img.width || 0);
       const height = Math.round(rect.height || img.naturalHeight || img.height || 0);
-
-      // In modal, the main image is usually large and central
-      // We lower the threshold slightly to be safe, but prioritize size
       candidates.push({ source, width, height, area: width * height });
     });
 
@@ -220,10 +204,7 @@
       'h3 a',
       'h3 span',
       'h4 a',
-      'h4 span',
-      // Modal specific: often in a specific header structure
-      '.xt0psk2 span',
-      'span.x193iq5w'
+      'h4 span'
     ];
     if (!brandName) {
       for (const selector of nameSelectors) {
@@ -243,10 +224,6 @@
       if (fallback) brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
     }
 
-    // Clean up "Name's Post"
-    if (brandName) {
-      brandName = brandName.replace(/'s Post$/i, '').trim();
-    }
 
     const potentialLogos = Array.from(card.querySelectorAll('img'))
       .map((img) => {
@@ -266,7 +243,7 @@
       if (!width || !height) return false;
       const approxSquare = Math.abs(width - height) <= Math.min(width, height) * 0.4;
       if (alt.includes('profile') || alt.includes('logo')) return true;
-      return approxSquare && width >= 20 && width <= 120 && height >= 20 && height <= 120;
+      return approxSquare && width <= 120 && height <= 120;
     });
     if (logoMatch) {
       brandLogo = logoMatch.source;
@@ -561,9 +538,6 @@
 
   const extractTextSegments = (card, brandName) => {
     const rawText = getCardText(card);
-    // In modal, sometimes the text is in a specific container that getCardText might miss if it's hidden or structured oddly.
-    // However, getCardText clones the whole card, so it should be there.
-    // We'll rely on cleanSegments to do the heavy lifting.
     const segments = removeTruncatedPreviews(cleanSegments(rawText, brandName));
     const result = categorizeSegments(segments);
     if (!result.primaryText && rawText.trim()) {
@@ -739,51 +713,16 @@
   const mountButton = (card) => {
     if (card.hasAttribute(CARD_ATTR)) return;
     if (card.querySelector('.swipekit-save-btn-clean')) return;
-
-    const isModal = card.getAttribute('role') === 'dialog';
     const button = createSaveButton(card);
     const wrapper = document.createElement('div');
     wrapper.className = 'swipekit-save-btn-wrapper';
-
-    if (isModal) {
-      wrapper.classList.add('swipekit-overlay');
-      // Try to find the main media container
-      // In the modal, the media is often in a specific wrapper.
-      // We want to attach to the media wrapper so it stays with the content.
-      const media = card.querySelector('video, img[src*="scontent"]');
-      let target = media ? media.parentElement : card;
-
-      // If we found a media element, try to find a stable wrapper
-      if (media) {
-        // Sometimes the immediate parent is just a sizer, go up one level if needed
-        if (media.parentElement && media.parentElement.clientHeight > 0) {
-          target = media.parentElement;
-        }
-      }
-
-      if (target) {
-        const parentStyle = window.getComputedStyle(target);
-        if (parentStyle.position === 'static') {
-          target.style.position = 'relative';
-        }
-        target.appendChild(wrapper);
-      } else {
-        card.appendChild(wrapper);
-      }
+    wrapper.appendChild(button);
+    const anchor = findAnchor(card);
+    if (anchor && anchor.parentElement) {
+      anchor.parentElement.insertBefore(wrapper, anchor.nextSibling);
     } else {
-      wrapper.appendChild(button);
-      const anchor = findAnchor(card);
-      if (anchor && anchor.parentElement) {
-        anchor.parentElement.insertBefore(wrapper, anchor.nextSibling);
-      } else {
-        card.appendChild(wrapper);
-      }
+      card.appendChild(wrapper);
     }
-
-    if (!wrapper.contains(button)) {
-      wrapper.appendChild(button);
-    }
-
     card.setAttribute(CARD_ATTR, 'true');
   };
 
@@ -793,23 +732,6 @@
       return Array.from(document.querySelectorAll('div.x1plvlek, div[role="article"], div[data-pagelet^="FeedUnit"]'))
         .filter((node) => node.offsetParent && matchesAdLibraryCard(node));
     }
-
-    if (platform === 'facebook-feed') {
-      // Prioritize media modals
-      const modals = Array.from(document.querySelectorAll('div[role="dialog"]'));
-      const mediaModals = modals.filter(modal => {
-        // Check if it looks like a media viewer (has video or large image)
-        return modal.querySelector('video') || modal.querySelector('img[src*="scontent"]');
-      });
-
-      if (mediaModals.length > 0) {
-        return mediaModals;
-      }
-
-      // Return empty to disable feed injection as per "only when i click" request
-      return [];
-    }
-
     const selector = SELECTORS[platform];
     if (!selector) return [];
     return Array.from(document.querySelectorAll(selector)).filter((node) => node.offsetParent);
