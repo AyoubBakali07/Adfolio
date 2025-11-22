@@ -16,13 +16,27 @@
         margin-top: 12px;
       }
       .swipekit-save-btn-wrapper.swipekit-overlay {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        width: auto;
-        margin: 0;
-        z-index: 9999;
-        pointer-events: auto;
+        position: absolute !important;
+        top: 20px !important;
+        right: 20px !important;
+        width: auto !important;
+        margin: 0 !important;
+        z-index: 999999999 !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        transform: translate3d(0, 0, 0) !important;
+        will-change: transform !important;
+      }
+      .swipekit-save-btn-clean.swipekit-overlay-btn {
+        position: relative !important;
+        z-index: 999999999 !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        transform: translate3d(0, 0, 0) !important;
+        background: rgba(248, 247, 244, 0.95) !important;
+        backdrop-filter: blur(4px) !important;
+        border: 2px solid rgba(15, 23, 42, 0.3) !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
       }
       .swipekit-save-btn-clean {
         width: 100%;
@@ -710,6 +724,7 @@
     button.appendChild(icon);
     button.appendChild(label);
     button.addEventListener('click', (event) => {
+      console.log('Swipekit: Button clicked!', event);
       event.preventDefault();
       event.stopPropagation();
       handleSave(card, button);
@@ -742,29 +757,29 @@
 
     if (isModal) {
       wrapper.classList.add('swipekit-overlay');
-      // Try to find the main media container
-      // In the modal, the media is often in a specific wrapper.
-      // We want to attach to the media wrapper so it stays with the content.
-      const media = card.querySelector('video, img[src*="scontent"]');
-      let target = media ? media.parentElement : card;
-
-      // If we found a media element, try to find a stable wrapper
-      if (media) {
-        // Sometimes the immediate parent is just a sizer, go up one level if needed
-        if (media.parentElement && media.parentElement.clientHeight > 0) {
-          target = media.parentElement;
-        }
+      button.classList.add('swipekit-overlay-btn');
+      wrapper.appendChild(button);
+      
+      console.log('Swipekit: Creating modal button', { button: button.outerHTML, wrapper: wrapper.outerHTML });
+      
+      // For modals, attach directly to the modal/dialog element itself
+      // This ensures we're above all video content and controls
+      let target = card;
+      
+      // Make sure the target has position relative for absolute positioning
+      const targetStyle = window.getComputedStyle(target);
+      if (targetStyle.position === 'static') {
+        target.style.position = 'relative';
       }
-
-      if (target) {
-        const parentStyle = window.getComputedStyle(target);
-        if (parentStyle.position === 'static') {
-          target.style.position = 'relative';
-        }
-        target.appendChild(wrapper);
-      } else {
-        card.appendChild(wrapper);
-      }
+      
+      // Append to the modal itself, not to media containers
+      target.appendChild(wrapper);
+      
+      console.log('Swipekit: Button attached to modal', { 
+        modal: card.tagName, 
+        buttonPosition: window.getComputedStyle(wrapper).position,
+        buttonZIndex: window.getComputedStyle(wrapper).zIndex
+      });
     } else {
       wrapper.appendChild(button);
       const anchor = findAnchor(card);
@@ -773,10 +788,6 @@
       } else {
         card.appendChild(wrapper);
       }
-    }
-
-    if (!wrapper.contains(button)) {
-      wrapper.appendChild(button);
     }
 
     card.setAttribute(CARD_ATTR, 'true');
