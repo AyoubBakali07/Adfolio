@@ -292,6 +292,56 @@ button {
   display: inline-block;
 }
 
+@media (max-width: 1200px) {
+  .dash-main {
+    padding: 24px;
+    margin-left: 0;
+  }
+  .dash-layout {
+    flex-direction: column;
+  }
+  .dash-sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    gap: 16px;
+    overflow-x: auto;
+  }
+  .card-grid {
+    column-width: 220px;
+    column-gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dash-main {
+    padding: 16px;
+  }
+  .hero-toolbar {
+    padding: 14px;
+  }
+  .hero-search {
+    padding: 10px 14px;
+  }
+  .filter-row {
+    gap: 8px;
+  }
+  .card-grid {
+    column-width: 190px;
+    column-gap: 14px;
+  }
+  .ad-card {
+    border-radius: 18px;
+  }
+  .ad-card-body {
+    padding: 16px;
+  }
+  .ad-card-brand {
+    align-items: center;
+  }
+}
+
 .ad-card {
   background: var(--surface);
   border-radius: 26px;
@@ -352,7 +402,7 @@ button {
 .ad-card-brand-avatar {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 50%;
   background: var(--surface-muted);
   display: flex;
   align-items: center;
@@ -387,7 +437,7 @@ button {
 .ad-card-delete {
   border: none;
   background: var(--surface-muted);
-  border-radius: 999px;
+  border-radius: 50%;
   width: 36px;
   height: 36px;
   cursor: pointer;
