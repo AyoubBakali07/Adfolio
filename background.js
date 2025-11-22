@@ -69,6 +69,12 @@ const handlers = {
   async CLEAR_ALL_ITEMS() {
     await writeItems([]);
     return [];
+  },
+  async RESTORE_ITEMS({ items }) {
+    if (!Array.isArray(items)) throw new Error('Invalid items');
+    const trimmed = items.slice(0, MAX_ITEMS);
+    await writeItems(trimmed);
+    return trimmed;
   }
 };
 

@@ -16,6 +16,7 @@ const sendMessage = (type, payload = {}) =>
 let items = [];
 let searchQuery = '';
 const pendingDeletions = new Map();
+let pendingClear = null;
 
 const cancelPendingDeletions = () => {
   pendingDeletions.forEach(({ timer, toastDismiss }) => {
@@ -109,7 +110,11 @@ const truncate = (text, limit = 140) => {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 };
 
-const getBrandName = (item) => (item.brandName && item.brandName.trim()) || 'Unknown brand';
+const getBrandName = (item) => {
+  const name = (item.brandName && item.brandName.trim()) || '';
+  if (name && name.toLowerCase() === 'sponsored') return 'Unknown brand';
+  return name || 'Unknown brand';
+};
 
 const getHostname = (url) => {
   if (!url) return 'Unknown source';
@@ -419,31 +424,31 @@ const createMediaElement = (item) => {
 
 const createDescriptionBlock = (text) => {
   const description = text || 'No caption captured for this ad yet.';
-  const limit = 220;
   const container = document.createElement('div');
-  container.className = 'ad-card-description';
+  container.className = 'ad-card-description collapsed';
 
   const paragraph = document.createElement('p');
-  const applyState = (expanded) => {
-    paragraph.textContent = expanded ? description : truncate(description, limit);
-  };
-
-  applyState(false);
+  paragraph.textContent = description;
   container.appendChild(paragraph);
 
-  if (description.length > limit) {
-    let expanded = false;
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'ad-card-toggle';
-    toggle.textContent = 'Show more';
-    toggle.addEventListener('click', () => {
-      expanded = !expanded;
-      applyState(expanded);
-      toggle.textContent = expanded ? 'Show less' : 'Show more';
-    });
-    container.appendChild(toggle);
-  }
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'ad-card-toggle';
+  toggle.textContent = 'Show more';
+  toggle.addEventListener('click', () => {
+    const expanded = container.classList.toggle('expanded');
+    container.classList.toggle('collapsed', !expanded);
+    toggle.textContent = expanded ? 'Show less' : 'Show more';
+  });
+
+  requestAnimationFrame(() => {
+    const needsClamp = paragraph.scrollHeight - paragraph.clientHeight > 1;
+    if (needsClamp) {
+      container.appendChild(toggle);
+    } else {
+      container.classList.remove('collapsed');
+    }
+  });
 
   return container;
 };
@@ -591,7 +596,7 @@ const deleteItem = (id) => {
   });
 };
 
-const DISALLOWED_TAGS = new Set(['ad library', 'facebook ad library', 'sponsored', 'web.facebook.com']);
+const DISALLOWED_TAGS = new Set(['ad library', 'facebook ad library', 'sponsored', 'web.facebook.com' ]);
 
 const isAllowedTag = (label) => {
   if (!label) return false;
@@ -630,7 +635,7 @@ const createAdCard = (item) => {
 
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
-  const tagLabels = new Set(['Landing Page']);
+  const tagLabels = new Set();
   if (item.brandName) tagLabels.add(getBrandName(item));
   if (item.platform) tagLabels.add(item.platform.replace(/-/g, ' '));
   if (item.pageUrl) tagLabels.add(getHostname(item.pageUrl));
@@ -698,16 +703,55 @@ const fetchItems = async () => {
 
 const clearAllItems = async () => {
   if (!items.length) return;
-  if (!confirm('Clear every saved ad? This cannot be undone.')) return;
-  try {
-    cancelPendingDeletions();
-    await sendMessage('CLEAR_ALL_ITEMS');
-    items = [];
-    renderItems();
-  } catch (error) {
-    console.error('Failed to clear items:', error);
-    alert('Could not clear your library.');
+  if (pendingClear) {
+    clearTimeout(pendingClear.timer);
+    pendingClear.toastDismiss?.();
+    pendingClear = null;
   }
+
+  const previousItems = [...items];
+  cancelPendingDeletions();
+  items = [];
+  renderItems();
+
+  const toastRef = showToast({
+    message: 'Library cleared',
+    undoLabel: 'Undo',
+    onUndo: async () => {
+      if (pendingClear) {
+        clearTimeout(pendingClear.timer);
+        pendingClear.toastDismiss?.();
+        pendingClear = null;
+        items = [...previousItems];
+        renderItems();
+        return;
+      }
+      try {
+        await sendMessage('RESTORE_ITEMS', { items: previousItems });
+        items = [...previousItems];
+        renderItems();
+      } catch (error) {
+        console.error('Failed to restore library:', error);
+        showToast({ message: 'Failed to restore library.', type: 'error', duration: 3000 });
+      }
+    },
+    duration: 4000
+  });
+
+  const timer = setTimeout(async () => {
+    pendingClear = null;
+    try {
+      await sendMessage('CLEAR_ALL_ITEMS');
+    } catch (error) {
+      console.error('Failed to clear items:', error);
+      showToast({ message: 'Could not clear your library.', type: 'error', duration: 3000 });
+    }
+  }, 4000);
+
+  pendingClear = {
+    timer,
+    toastDismiss: toastRef.dismiss
+  };
 };
 
 window.addEventListener('DOMContentLoaded', () => {

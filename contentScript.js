@@ -236,6 +236,10 @@
     });
     if (logoMatch) brandLogo = logoMatch.source;
 
+    if (brandName && brandName.trim().toLowerCase() === 'sponsored') {
+      brandName = '';
+    }
+
     return { brandName, brandLogo };
   };
 
