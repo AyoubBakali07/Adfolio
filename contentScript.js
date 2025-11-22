@@ -189,6 +189,13 @@
 
   const collectBrandInfo = (card) => {
     let brandName = '';
+    // In Ad Library cards, the brand usually sits in the first heading block under the media and above "Sponsored".
+    const brandHeading = card.querySelector('div[role="heading"], h2, h3, h4, strong');
+    if (brandHeading) {
+      brandName = sanitize(brandHeading.textContent || '').split('•')[0].trim();
+    }
+
+    // Fallback selectors for other layouts
     const nameSelectors = [
       'strong a',
       'strong span',
@@ -199,20 +206,24 @@
       'h4 a',
       'h4 span'
     ];
-    for (const selector of nameSelectors) {
-      const node = card.querySelector(selector);
-      if (node) {
-        const text = sanitize(node.textContent || '');
-        if (text) {
-          brandName = text.split('•')[0].trim();
-          break;
+    if (!brandName) {
+      for (const selector of nameSelectors) {
+        const node = card.querySelector(selector);
+        if (node) {
+          const text = sanitize(node.textContent || '');
+          if (text) {
+            brandName = text.split('•')[0].trim();
+            break;
+          }
         }
       }
     }
+
     if (!brandName) {
-      const fallback = card.querySelector('strong, h3, h4, [role="heading"]');
+      const fallback = card.querySelector('strong, h2, h3, h4, [role="heading"]');
       if (fallback) brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
     }
+
 
     const potentialLogos = Array.from(card.querySelectorAll('img'))
       .map((img) => {
@@ -234,7 +245,12 @@
       if (alt.includes('profile') || alt.includes('logo')) return true;
       return approxSquare && width <= 120 && height <= 120;
     });
-    if (logoMatch) brandLogo = logoMatch.source;
+    if (logoMatch) {
+      brandLogo = logoMatch.source;
+      if (!brandName && logoMatch.alt) {
+        brandName = sanitize(logoMatch.alt);
+      }
+    }
 
     if (brandName && brandName.trim().toLowerCase() === 'sponsored') {
       brandName = '';
