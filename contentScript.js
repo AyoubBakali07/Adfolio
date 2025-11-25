@@ -251,30 +251,66 @@
       }
     }
 
+    const extractLabel = (node) => {
+      if (!node) return '';
+      const text = sanitize(node.textContent || '')
+        .split('•')[0]
+        .split('Sponsored')[0]
+        .trim();
+      if (!text) return '';
+      if (text.toLowerCase() === 'sponsored') return '';
+      if (text.length < 2 || text.length > 60) return '';
+      return text;
+    };
+
+    const findBrandNearSponsored = () => {
+      const sponsoredNode = Array.from(card.querySelectorAll('span, div, strong'))
+        .find((node) => normalizeValue(node.textContent) === 'sponsored');
+      if (!sponsoredNode) return '';
+
+      const candidateTexts = [];
+      let prev = sponsoredNode.previousElementSibling;
+      while (prev && !extractLabel(prev)) {
+        prev = prev.previousElementSibling;
+      }
+      if (prev) candidateTexts.push(extractLabel(prev));
+
+      if (sponsoredNode.parentElement) {
+        Array.from(sponsoredNode.parentElement.children)
+          .filter((child) => child !== sponsoredNode)
+          .forEach((child) => candidateTexts.push(extractLabel(child)));
+      }
+
+      return candidateTexts.find(Boolean) || '';
+    };
+
+    // Try the structured header first (above "Sponsored")
+    if (!brandName) {
+      brandName = findBrandNearSponsored();
+    }
+
     // Try to find brand name by looking near potential logos
-    for (const logoCandidate of potentialLogos) {
-      if (brandLogo) break; // Already found a logo
+    if (!brandName) {
+      for (const logoCandidate of potentialLogos) {
+        if (brandLogo) break; // Already found a logo
 
-      const img = logoCandidate.img;
-      const parent = img.parentElement;
-      const grandParent = parent?.parentElement;
+        const img = logoCandidate.img;
+        const parent = img.parentElement;
+        const grandParent = parent?.parentElement;
 
-      // Look for brand name in the same container or nearby containers
-      const nearbyContainers = [
-        parent,
-        grandParent,
-        parent?.nextElementSibling,
-        parent?.previousElementSibling,
-        grandParent?.nextElementSibling,
-        grandParent?.previousElementSibling
-      ].filter(Boolean);
+        // Look for brand name in the same container or nearby containers
+        const nearbyContainers = [
+          parent,
+          grandParent,
+          parent?.nextElementSibling,
+          parent?.previousElementSibling,
+          grandParent?.nextElementSibling,
+          grandParent?.previousElementSibling
+        ].filter(Boolean);
 
-      for (const container of nearbyContainers) {
-        const text = sanitize(container.textContent || '');
-        if (text && text !== 'Sponsored' && !text.toLowerCase().includes('sponsored')) {
-          // Look for brand-like patterns (names with hyphens, caps, etc.)
-          const cleanText = text.split('•')[0].split('Sponsored')[0].trim();
-          if (cleanText && cleanText.length > 2 && cleanText.length < 50) {
+        for (const container of nearbyContainers) {
+          const cleanText = extractLabel(container);
+          if (cleanText) {
             brandName = cleanText;
             brandLogo = logoCandidate.source;
             break;
@@ -283,7 +319,7 @@
       }
     }
 
-    // If no brand found near logos, try general brand detection
+    // If no brand found near logos or sponsored label, try general brand detection
     if (!brandName) {
       // In Ad Library cards, the brand usually sits in the first heading block under the media and above "Sponsored".
       const brandHeading = card.querySelector('div[role="heading"], h2, h3, h4, strong');

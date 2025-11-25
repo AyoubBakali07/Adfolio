@@ -507,22 +507,25 @@ const createBrandHeader = (item) => {
   const container = document.createElement('div');
   container.className = 'ad-card-brand';
 
+  const brandName = getBrandName(item);
+  const hasCapturedBrand = Boolean((item.brandName || '').trim());
+
   const avatar = document.createElement('div');
   avatar.className = 'ad-card-brand-avatar';
   if (item.brandLogo) {
     const img = document.createElement('img');
     img.src = item.brandLogo;
-    img.alt = `${getBrandName(item)} logo`;
+    img.alt = `${brandName} logo`;
     avatar.appendChild(img);
   } else {
-    avatar.textContent = getBrandName(item).charAt(0).toUpperCase();
+    avatar.textContent = brandName.charAt(0).toUpperCase();
   }
 
   const text = document.createElement('div');
   text.className = 'ad-card-brand-text';
   const title = document.createElement('p');
   title.className = 'ad-card-brand-name';
-  title.textContent = getBrandName(item);
+  title.textContent = brandName;
   const subtitle = document.createElement('p');
   subtitle.className = 'ad-card-brand-time';
   const relative = formatRelativeTime(item.capturedAt);
@@ -530,6 +533,35 @@ const createBrandHeader = (item) => {
   subtitle.textContent = `Saved ${relative} · ${platform}`;
   text.appendChild(title);
   text.appendChild(subtitle);
+
+  if (!hasCapturedBrand) {
+    const warning = document.createElement('p');
+    warning.className = 'ad-card-brand-warning';
+
+    const dot = document.createElement('span');
+    dot.className = 'ad-card-warning-dot';
+    dot.setAttribute('aria-hidden', 'true');
+
+    const message = document.createElement('span');
+    message.textContent = 'Brand not detected in capture';
+
+    warning.appendChild(dot);
+    warning.appendChild(message);
+
+    if (item.pageUrl) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'ad-card-brand-retry';
+      retry.textContent = 'Retry capture';
+      retry.addEventListener('click', (event) => {
+        event.stopPropagation();
+        window.open(item.pageUrl, '_blank', 'noopener');
+      });
+      warning.appendChild(retry);
+    }
+
+    text.appendChild(warning);
+  }
 
   container.appendChild(avatar);
   container.appendChild(text);

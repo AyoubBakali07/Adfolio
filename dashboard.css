@@ -439,6 +439,35 @@ button {
   color: var(--muted);
 }
 
+.ad-card-brand-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.ad-card-warning-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #f3b63f;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.ad-card-brand-retry {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+}
+
 .ad-card-delete {
   border: none;
   background: var(--surface-muted);
