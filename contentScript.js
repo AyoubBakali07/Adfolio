@@ -219,47 +219,9 @@
 
   const collectBrandInfo = (card) => {
     let brandName = '';
-    // In Ad Library cards, the brand usually sits in the first heading block under the media and above "Sponsored".
-    const brandHeading = card.querySelector('div[role="heading"], h2, h3, h4, strong');
-    if (brandHeading) {
-      brandName = sanitize(brandHeading.textContent || '').split('•')[0].trim();
-    }
+    let brandLogo = null;
 
-    // Fallback selectors for other layouts
-    const nameSelectors = [
-      'strong a',
-      'strong span',
-      '[role="heading"] a',
-      '[role="heading"] span',
-      'h3 a',
-      'h3 span',
-      'h4 a',
-      'h4 span'
-    ];
-    if (!brandName) {
-      for (const selector of nameSelectors) {
-        const node = card.querySelector(selector);
-        if (node) {
-          const text = sanitize(node.textContent || '');
-          if (text) {
-            brandName = text.split('•')[0].trim();
-            break;
-          }
-        }
-      }
-    }
-
-    if (!brandName) {
-      const fallback = card.querySelector('strong, h2, h3, h4, [role="heading"]');
-      if (fallback) brandName = sanitize(fallback.textContent || '').split('•')[0].trim();
-    }
-
-    // Clean up "Name's Post"
-    if (brandName) {
-      brandName = brandName.replace(/'s Post$/i, '').trim();
-    }
-
-
+    // First, find all small square images that could be brand logos
     const potentialLogos = Array.from(card.querySelectorAll('img'))
       .map((img) => {
         const source = normalizeUrl(img.currentSrc || img.src);
@@ -273,17 +235,142 @@
       .filter(Boolean)
       .filter(({ width, height }) => width && height && width <= 160 && height <= 160);
 
-    let brandLogo = null;
-    const logoMatch = potentialLogos.find(({ width, height, alt }) => {
-      if (!width || !height) return false;
-      const approxSquare = Math.abs(width - height) <= Math.min(width, height) * 0.4;
-      if (alt.includes('profile') || alt.includes('logo')) return true;
-      return approxSquare && width >= 20 && width <= 120 && height >= 20 && height <= 120;
+    // Sort potential logos by size (prefer medium-sized logos)
+    potentialLogos.sort((a, b) => {
+      const aScore = Math.abs(a.width - a.height) + (a.width < 20 ? 1000 : a.width > 120 ? 100 : 0);
+      const bScore = Math.abs(b.width - b.height) + (b.width < 20 ? 1000 : b.width > 120 ? 100 : 0);
+      return aScore - bScore;
     });
-    if (logoMatch) {
-      brandLogo = logoMatch.source;
-      if (!brandName && logoMatch.alt) {
-        brandName = sanitize(logoMatch.alt);
+
+    // Modal specific: The logo is often the first image in the dialog header
+    const isModal = card.getAttribute('role') === 'dialog';
+    if (isModal && !brandLogo) {
+      const headerLogo = potentialLogos.find(p => p.width >= 30 && p.width <= 100 && Math.abs(p.width - p.height) < 5);
+      if (headerLogo) {
+        brandLogo = headerLogo.source;
+      }
+    }
+
+    // Try to find brand name by looking near potential logos
+    for (const logoCandidate of potentialLogos) {
+      if (brandLogo) break; // Already found a logo
+
+      const img = logoCandidate.img;
+      const parent = img.parentElement;
+      const grandParent = parent?.parentElement;
+
+      // Look for brand name in the same container or nearby containers
+      const nearbyContainers = [
+        parent,
+        grandParent,
+        parent?.nextElementSibling,
+        parent?.previousElementSibling,
+        grandParent?.nextElementSibling,
+        grandParent?.previousElementSibling
+      ].filter(Boolean);
+
+      for (const container of nearbyContainers) {
+        const text = sanitize(container.textContent || '');
+        if (text && text !== 'Sponsored' && !text.toLowerCase().includes('sponsored')) {
+          // Look for brand-like patterns (names with hyphens, caps, etc.)
+          const cleanText = text.split('•')[0].split('Sponsored')[0].trim();
+          if (cleanText && cleanText.length > 2 && cleanText.length < 50) {
+            brandName = cleanText;
+            brandLogo = logoCandidate.source;
+            break;
+          }
+        }
+      }
+    }
+
+    // If no brand found near logos, try general brand detection
+    if (!brandName) {
+      // In Ad Library cards, the brand usually sits in the first heading block under the media and above "Sponsored".
+      const brandHeading = card.querySelector('div[role="heading"], h2, h3, h4, strong');
+      if (brandHeading) {
+        const headingText = sanitize(brandHeading.textContent || '').split('•')[0].split('Sponsored')[0].trim();
+        if (headingText && headingText !== 'Sponsored') {
+          brandName = headingText;
+        }
+      }
+
+      // Try siblings around the "Sponsored" label (common Ad Library layout)
+      if (!brandName) {
+        const sponsoredNode = Array.from(card.querySelectorAll('span, div, strong'))
+          .find((node) => normalizeValue(node.textContent) === 'sponsored');
+        if (sponsoredNode) {
+          const candidateTexts = [];
+          if (sponsoredNode.previousElementSibling) {
+            candidateTexts.push(sponsoredNode.previousElementSibling.textContent || '');
+          }
+          if (sponsoredNode.parentElement) {
+            Array.from(sponsoredNode.parentElement.children)
+              .filter((child) => child !== sponsoredNode)
+              .forEach((child) => candidateTexts.push(child.textContent || ''));
+          }
+          const firstName = candidateTexts
+            .map((txt) => sanitize(txt).split('•')[0].split('Sponsored')[0].trim())
+            .find((txt) => txt && txt.toLowerCase() !== 'sponsored');
+          if (firstName) brandName = firstName;
+        }
+      }
+
+      // Fallback selectors for other layouts
+      const nameSelectors = [
+        'strong a',
+        'strong span',
+        '[role="heading"] a',
+        '[role="heading"] span',
+        'h3 a',
+        'h3 span',
+        'h4 a',
+        'h4 span'
+      ];
+      if (!brandName) {
+        for (const selector of nameSelectors) {
+          const node = card.querySelector(selector);
+          if (node) {
+            const text = sanitize(node.textContent || '');
+            if (text && text !== 'Sponsored') {
+              brandName = text.split('•')[0].split('Sponsored')[0].trim();
+              break;
+            }
+          }
+        }
+      }
+
+      if (!brandName) {
+        const fallback = card.querySelector('strong, h2, h3, h4, [role="heading"]');
+        if (fallback) {
+          const fallbackText = sanitize(fallback.textContent || '');
+          if (fallbackText && fallbackText !== 'Sponsored') {
+            brandName = fallbackText.split('•')[0].split('Sponsored')[0].trim();
+          }
+        }
+      }
+    }
+
+    // If still no logo but have brand name, try to find the best logo candidate
+    if (!brandLogo && brandName && potentialLogos.length > 0) {
+      const logoMatch = potentialLogos.find(({ width, height, alt }) => {
+        if (!width || !height) return false;
+        const approxSquare = Math.abs(width - height) <= Math.min(width, height) * 0.4;
+        if (alt.includes('profile') || alt.includes('logo')) return true;
+        return approxSquare && width >= 20 && width <= 120 && height >= 20 && height <= 120;
+      });
+      if (logoMatch) {
+        brandLogo = logoMatch.source;
+      }
+    }
+
+    // Clean up "Name's Post"
+    if (brandName) {
+      // Remove "Name's Post" suffix case-insensitive
+      brandName = brandName.replace(/['’]s Post$/i, '').trim();
+      // Also split by it in case of extra text
+      const split = brandName.split(/['’]s Post/i);
+      if (split.length > 0) {
+        brandName = split[0].trim();
       }
     }
 
@@ -296,7 +383,15 @@
 
   const getVideoCandidates = (card) => {
     const candidates = [];
-    card.querySelectorAll('video').forEach((video) => {
+    // In modal, sometimes video is in a shadow root or iframe, but usually it's a <video> tag.
+    // We should also look for the main video if the card is the modal itself.
+    const videos = Array.from(card.querySelectorAll('video'));
+
+    // If no videos found in card (modal), try looking at the whole document if we are in modal mode
+    // and the card is the dialog. But be careful not to grab unrelated videos.
+    // Actually, the modal usually contains the video.
+
+    videos.forEach((video) => {
       const rect = video.getBoundingClientRect();
       const width = Math.round(video.videoWidth || rect.width || video.clientWidth || 0);
       const height = Math.round(video.videoHeight || rect.height || video.clientHeight || 0);
@@ -312,6 +407,16 @@
       });
       if (urls.size) candidates.push({ urls: Array.from(urls), width, height, area });
     });
+
+    // If no video found in card, and it's a modal, try to find the main video in the document that overlaps with the card
+    // or is within the central area. 
+    if (candidates.length === 0 && card.getAttribute('role') === 'dialog') {
+      // Sometimes the video is not a descendant of the dialog role element in the DOM tree (portals etc)
+      // But usually it is. Let's check for iframes or other video containers.
+      const iframes = card.querySelectorAll('iframe');
+      // We can't access iframe content usually, but maybe the src is there.
+    }
+
     return candidates.sort((a, b) => b.area - a.area);
   };
 
@@ -357,9 +462,53 @@
     return expanded;
   };
 
+  const removeComments = (node) => {
+    // Find the action bar containing Like/Comment/Share
+    const buttons = Array.from(node.querySelectorAll('div[role="button"], button, span'));
+    const actionButton = buttons.find(b => {
+      const t = b.textContent.toLowerCase().trim();
+      return t === 'like' || t === 'comment' || t === 'share';
+    });
+
+    if (actionButton) {
+      // Traverse up to find the row/group containing these buttons
+      let parent = actionButton.parentElement;
+      let depth = 0;
+      while (parent && parent !== node && depth < 5) {
+        // If we find a group or a container with multiple such buttons, that's likely the bar
+        const hasSiblings = parent.querySelectorAll('div[role="button"], button').length > 1;
+        const isGroup = parent.getAttribute('role') === 'group';
+
+        if (isGroup || hasSiblings) {
+          // This is the action bar. Remove it and everything after it (comments).
+          let current = parent;
+          // Remove all following siblings of the action bar
+          while (current.nextElementSibling) {
+            current.nextElementSibling.remove();
+          }
+          // Remove the action bar itself
+          parent.remove();
+          return;
+        }
+        parent = parent.parentElement;
+        depth++;
+      }
+    }
+
+    // Fallback: Remove forms (comment inputs) and lists (comments)
+    node.querySelectorAll('form').forEach(n => n.remove());
+    node.querySelectorAll('ul').forEach(n => {
+      if (n.textContent.toLowerCase().includes('reply')) n.remove();
+    });
+  };
+
   const getCardText = (card) => {
     const clone = card.cloneNode(true);
     clone.querySelectorAll('.swipekit-save-btn-wrapper').forEach((node) => node.remove());
+
+    // Remove comments and engagement bar to isolate primary text
+    removeComments(clone);
+
     const div = document.createElement('div');
     div.style.position = 'absolute';
     div.style.left = '-9999px';
@@ -390,7 +539,16 @@
     /^landing page\b/i,
     /^saved \d+/i,
     /^show more$/i,
-    /^show less$/i
+    /^show less$/i,
+    /^facebook$/i,
+    /^like$/i,
+    /^comment$/i,
+    /^share$/i,
+    /^\d+ comments$/i,
+    /^\d+ shares$/i,
+    /^\d+ likes$/i,
+    /^write a comment/i,
+    /^press enter to post/i
   ];
   const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
   const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
@@ -511,6 +669,14 @@
       if (isBlank) return true;
       if (brandKey && normalizeValue(raw) === brandKey) return false;
       if (brandKey && normalizeValue(detection) === brandKey) return false;
+
+      // Filter out single character garbage (vertical text reading)
+      // Keep 'a' and 'I' as they are valid words
+      if (detection.length === 1 && !/[aAiI]/.test(detection)) return false;
+
+      // Filter out lines that are just numbers or special chars (often timestamps or metrics read poorly)
+      if (/^[\d\W]+$/.test(detection)) return false;
+
       return true;
     });
   };
@@ -537,33 +703,55 @@
     let domain = '';
     let headline = '';
     let ctaLabel = '';
+
     segments.forEach(({ raw, detection, lower, isBlank }) => {
       if (isBlank && raw === '') {
         primary.push('');
         return;
       }
       if (!detection) return;
+
+      // Skip UI elements and social interactions
+      if (['like', 'comment', 'share', 'facebook', 'write a comment', 'press enter to post'].includes(lower)) return;
+      if (/^\d+\s+(likes|comments|shares)$/.test(lower)) return;
+      if (['sponsored', 'facebook', 'ad library'].includes(lower)) return;
+
+      // CTA detection
       if (!ctaLabel && CTA_LABEL_SET.has(lower)) {
         ctaLabel = detection;
         return;
       }
+
+      // Domain detection
       const domainCandidate = detection.replace(/^https?:\/\//i, '');
       if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
         domain = detection;
         return;
       }
-      if (domain && !headline) {
-        headline = detection;
-        return;
+
+      // Headline detection (usually shorter, punchy text)
+      if (!headline && detection.length < 100 && detection.length > 10 && !detection.includes('\n')) {
+        // Check if it looks like a headline (no periods, might be capitalized)
+        if (!detection.includes('.') && detection === detection.replace(/\s+/g, ' ').trim()) {
+          headline = detection;
+          return;
+        }
       }
-      if (domain && headline) {
+
+      // For Facebook feed/modal, most text should go to primary (ad copy)
+      // unless we've already identified structured components
+      if (domain && headline && descriptionParts.length === 0) {
+        // This might be description/link text
         descriptionParts.push(detection);
         return;
       }
+
+      // Default to primary text (main ad copy)
       primary.push(raw);
     });
+
     return {
-      primaryText: primary.join('\n'),
+      primaryText: primary.join('\n').trim(),
       domain,
       headline,
       description: descriptionParts.join('\n').trim(),
@@ -591,31 +779,47 @@
   const captureCard = (card) => {
     const { brandName, brandLogo } = collectBrandInfo(card);
     const { rawText, fullAdCopy, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
+
+    // Debug logging
+    console.log('Swipekit: Card capture debug', {
+      brandName,
+      brandLogo,
+      primaryText: primaryText?.substring(0, 100),
+      fullAdCopy: fullAdCopy?.substring(0, 100),
+      rawText: rawText?.substring(0, 100),
+      domain,
+      headline,
+      description,
+      ctaLabel
+    });
+
     const hasPrimary = typeof primaryText === 'string' && primaryText.replace(/\s/g, '').length > 0;
-    const finalAdCopy = fullAdCopy || (hasPrimary ? primaryText : rawText);
     const aspectRatio = detectAspectRatio(card);
+
+    // Structure the data to match Ad Library format
     const payload = {
       id: createId(),
       platform: detectPlatform(),
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
-      text: finalAdCopy,
+      text: primaryText || fullAdCopy || rawText, // Main ad copy
       imageUrls: collectImages(card),
       videoUrls: collectVideos(card),
       brandName,
       brandLogo,
-      extra: {}
+      extra: {
+        rawText: rawText,
+        adCopy: primaryText || fullAdCopy || rawText,
+        fullAdCopy: fullAdCopy || rawText,
+        primaryText: primaryText || '',
+        domain: domain || '',
+        headline: headline || '',
+        linkDescription: description || '',
+        ctaLabel: ctaLabel || '',
+        aspectRatio: Number.isFinite(aspectRatio) ? aspectRatio : null
+      }
     };
-    if (aspectRatio && Number.isFinite(aspectRatio)) {
-      payload.extra.aspectRatio = aspectRatio;
-    }
-    payload.extra.rawText = rawText;
-    payload.extra.adCopy = finalAdCopy;
-    payload.extra.fullAdCopy = finalAdCopy;
-    payload.extra.domain = domain || '';
-    payload.extra.headline = headline || '';
-    payload.extra.linkDescription = description || '';
-    payload.extra.ctaLabel = ctaLabel || '';
+
     return payload;
   };
 
@@ -759,24 +963,24 @@
       wrapper.classList.add('swipekit-overlay');
       button.classList.add('swipekit-overlay-btn');
       wrapper.appendChild(button);
-      
+
       console.log('Swipekit: Creating modal button', { button: button.outerHTML, wrapper: wrapper.outerHTML });
-      
+
       // For modals, attach directly to the modal/dialog element itself
       // This ensures we're above all video content and controls
       let target = card;
-      
+
       // Make sure the target has position relative for absolute positioning
       const targetStyle = window.getComputedStyle(target);
       if (targetStyle.position === 'static') {
         target.style.position = 'relative';
       }
-      
+
       // Append to the modal itself, not to media containers
       target.appendChild(wrapper);
-      
-      console.log('Swipekit: Button attached to modal', { 
-        modal: card.tagName, 
+
+      console.log('Swipekit: Button attached to modal', {
+        modal: card.tagName,
         buttonPosition: window.getComputedStyle(wrapper).position,
         buttonZIndex: window.getComputedStyle(wrapper).zIndex
       });
