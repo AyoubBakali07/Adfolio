@@ -776,7 +776,14 @@ const clearAllItems = async () => {
       await sendMessage('CLEAR_ALL_ITEMS');
     } catch (error) {
       console.error('Failed to clear items:', error);
-      showToast({ message: 'Could not clear your library.', type: 'error', duration: 3000 });
+      items = [...previousItems];
+      renderItems();
+      try {
+        await sendMessage('RESTORE_ITEMS', { items: previousItems });
+      } catch (restoreError) {
+        console.error('Failed to restore after clear failure:', restoreError);
+      }
+      showToast({ message: 'Could not clear your library. Restored previous items.', type: 'error', duration: 4000 });
     }
   }, 4000);
 

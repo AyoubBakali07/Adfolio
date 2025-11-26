@@ -175,33 +175,28 @@
 
   const getImageCandidates = (card) => {
     const candidates = [];
-    // Modal specific: Look for the main image in the theater view
-    const isModal = card.getAttribute('role') === 'dialog';
     const images = card.querySelectorAll('img');
 
-    images.forEach((img) => {
+    images.forEach((img, index) => {
       const source = getBestImageSource(img);
       if (!source) return;
       const rect = img.getBoundingClientRect();
       const width = Math.round(rect.width || img.naturalWidth || img.width || 0);
       const height = Math.round(rect.height || img.naturalHeight || img.height || 0);
-
-      // In modal, the main image is usually large and central
-      // We lower the threshold slightly to be safe, but prioritize size
-      candidates.push({ source, width, height, area: width * height });
+      candidates.push({ source, width, height, area: width * height, index });
     });
 
     if (!candidates.length) return [];
 
     const MIN_DIMENSION = 140;
-    const large = candidates.filter(({ width, height, area }) => {
+    const filtered = candidates.filter(({ width, height, area }) => {
       if (!width || !height) return false;
       if (width >= MIN_DIMENSION || height >= MIN_DIMENSION) return true;
       return area >= MIN_DIMENSION * MIN_DIMENSION;
     });
 
-    const prioritized = (large.length ? large : candidates).sort((a, b) => b.area - a.area);
-    return prioritized;
+    const ordered = (filtered.length ? filtered : candidates).sort((a, b) => a.index - b.index);
+    return ordered;
   };
 
   const collectImages = (card) => {
@@ -432,6 +427,15 @@
     return { brandName, brandLogo };
   };
 
+  const isDurableMediaUrl = (url) => {
+    if (!url) return false;
+    const normalized = url.trim().toLowerCase();
+    if (!normalized) return false;
+    if (normalized.startsWith('blob:')) return false;
+    if (normalized.startsWith('data:')) return false;
+    return true;
+  };
+
   const getVideoCandidates = (card) => {
     const candidates = [];
     // In modal, sometimes video is in a shadow root or iframe, but usually it's a <video> tag.
@@ -450,11 +454,11 @@
       const urls = new Set();
       [video.currentSrc, video.src].forEach((value) => {
         const normalized = normalizeUrl(value);
-        if (normalized) urls.add(normalized);
+        if (isDurableMediaUrl(normalized)) urls.add(normalized);
       });
       video.querySelectorAll('source').forEach((source) => {
         const normalized = normalizeUrl(source.src);
-        if (normalized) urls.add(normalized);
+        if (isDurableMediaUrl(normalized)) urls.add(normalized);
       });
       if (urls.size) candidates.push({ urls: Array.from(urls), width, height, area });
     });
@@ -560,15 +564,11 @@
     // Remove comments and engagement bar to isolate primary text
     removeComments(clone);
 
-    const div = document.createElement('div');
-    div.style.position = 'absolute';
-    div.style.left = '-9999px';
-    div.style.top = '-9999px';
-    div.style.whiteSpace = 'pre-wrap';
-    div.appendChild(clone);
-    document.body.appendChild(div);
-    const text = div.innerText || '';
-    document.body.removeChild(div);
+    const container = document.createElement('div');
+    container.style.whiteSpace = 'pre-wrap';
+    container.appendChild(clone);
+
+    const text = container.innerText || container.textContent || '';
     return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
   };
 
