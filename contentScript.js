@@ -284,21 +284,35 @@
       return candidateTexts.find(Boolean) || '';
     };
 
+    // Focus on header region to avoid scanning the full card
+    const headerContainer = (() => {
+      const sponsored = Array.from(card.querySelectorAll('span, div, strong'))
+        .find((node) => normalizeValue(node.textContent) === 'sponsored');
+      if (sponsored?.parentElement) return sponsored.parentElement;
+      const heading = card.querySelector('div[role="heading"], h2, h3, h4, strong');
+      return heading ? heading.parentElement : null;
+    })();
+
+    const headerLogos = headerContainer
+      ? potentialLogos.filter(({ img }) => headerContainer.contains(img))
+      : potentialLogos;
+
+    const limitedLogos = headerLogos.slice(0, 6);
+
     // Try the structured header first (above "Sponsored")
     if (!brandName) {
       brandName = findBrandNearSponsored();
     }
 
-    // Try to find brand name by looking near potential logos
+    // Try to find brand name by looking near a limited set of header logos
     if (!brandName) {
-      for (const logoCandidate of potentialLogos) {
+      for (const logoCandidate of limitedLogos) {
         if (brandLogo) break; // Already found a logo
 
         const img = logoCandidate.img;
         const parent = img.parentElement;
         const grandParent = parent?.parentElement;
 
-        // Look for brand name in the same container or nearby containers
         const nearbyContainers = [
           parent,
           grandParent,
@@ -316,6 +330,7 @@
             break;
           }
         }
+        if (brandName) break;
       }
     }
 
