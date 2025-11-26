@@ -126,6 +126,10 @@
     }
   };
 
+  const normalizeValue = (value = '') => value.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  let parserWarningShown = false;
+
   const parseSrcsetDescriptor = (descriptor) => {
     const match = descriptor.trim().match(/(\d+(?:\.\d+)?)(w|x)/i);
     if (!match) return 0;
@@ -572,259 +576,25 @@
     return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
   };
 
-  const AD_COPY_NOISE = [
-    /^active$/i,
-    /^activelibrary id/i,
-    /^library id/i,
-    /^started running/i,
-    /^platforms?/i,
-    /^\d+\s+ads use this creative/i,
-    /^open dropdown/i,
-    /^see ad details/i,
-    /^see summary details/i,
-    /^this ad has multiple versions$/i,
-    /^see translation/i,
-    /^sponsored$/i,
-    /^facebook ad library/i,
-    /^ad library\b/i,
-    /^landing page\b/i,
-    /^saved \d+/i,
-    /^show more$/i,
-    /^show less$/i,
-    /^facebook$/i,
-    /^like$/i,
-    /^comment$/i,
-    /^share$/i,
-    /^\d+ comments$/i,
-    /^\d+ shares$/i,
-    /^\d+ likes$/i,
-    /^write a comment/i,
-    /^press enter to post/i
-  ];
-  const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
-  const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
-  const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
-  const DOMAIN_INLINE_PATTERN = /[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i;
-  const CTA_LABELS = [
-    'Shop Now',
-    'Learn More',
-    'Sign Up',
-    'Order Now',
-    'Subscribe',
-    'Get Offer',
-    'Contact Us',
-    'Apply Now',
-    'Download',
-    'Install Now',
-    'Watch More',
-    'Book Now',
-    'Get Quote',
-    'See Menu',
-    'Donate Now',
-    'View Details'
-  ];
-  const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
-  const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
-
-  const stripBrandPrefix = (line, brandName) => {
-    if (!brandName) return line;
-    const safe = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const sponsoredPattern = new RegExp(`^${safe}\\s*Sponsored\\s*`, 'i');
-    if (sponsoredPattern.test(line)) return line.replace(sponsoredPattern, '');
-    const brandPattern = new RegExp(`^${safe}\\b`, 'i');
-    if (brandPattern.test(line)) return line.replace(brandPattern, '');
-    return line;
-  };
-
-  const splitSegmentsByPattern = (segment, regex) => {
-    const fragments = [];
-    let remaining = segment;
-    while (remaining) {
-      const match = remaining.match(regex);
-      if (!match || typeof match.index !== 'number') {
-        fragments.push(remaining);
-        break;
-      }
-      const before = remaining.slice(0, match.index);
-      const after = remaining.slice(match.index + match[0].length);
-      if (before) fragments.push(before);
-      fragments.push(match[0]);
-      remaining = after;
-    }
-    return fragments.length ? fragments : [''];
-  };
-
-  const splitLineSegments = (line) => {
-    let segments = [line];
-    [DOMAIN_INLINE_PATTERN, CTA_PATTERN].forEach((regex) => {
-      const buffer = [];
-      segments.forEach((segment) => buffer.push(...splitSegmentsByPattern(segment, regex)));
-      segments = buffer;
-    });
-    return segments;
-  };
-
-  const shouldDropPrefix = (value) => /(activelibrary id|see ad details|open dropdown|summary details|total active time|platforms?)/i.test(value);
-
-  const removeMetadataPrefix = (line) => {
-    const lower = line.toLowerCase();
-    const idx = lower.lastIndexOf('sponsored');
-    if (idx > -1) {
-      const prefix = lower.slice(0, idx);
-      if (shouldDropPrefix(prefix)) {
-        return line.slice(idx + 'sponsored'.length);
-      }
-    }
-    return line;
-  };
-
-  const normalizeForDetection = (value) => value.replace(/\u200b/g, '').replace(TIMESTAMP_PATTERN, '').trim();
-
-  const normalizeValue = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
-
-  const cleanSegments = (text, brandName = '') => {
-    if (!text) return [];
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
-    const brandKey = brandName ? normalizeValue(brandName) : '';
-    const segments = [];
-    normalized.split('\n').forEach((line) => {
-      const withoutBrand = stripBrandPrefix(line, brandName);
-      const cleanedLine = removeMetadataPrefix(withoutBrand);
-      const wasOriginalBlank = !line.trim();
-      if (!cleanedLine) {
-        if (wasOriginalBlank) {
-          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
-        }
-        return;
-      }
-      splitLineSegments(cleanedLine).forEach((segment) => {
-        if (segment === '') {
-          segments.push({ raw: '', detection: '', lower: '', isBlank: true });
-          return;
-        }
-        const detection = normalizeForDetection(segment);
-        if (!detection) {
-          segments.push({ raw: segment, detection: '', lower: '', isBlank: true });
-          return;
-        }
-        if (AD_COPY_NOISE.some((pattern) => pattern.test(detection))) return;
-        segments.push({
-          raw: segment,
-          detection,
-          lower: detection.toLowerCase(),
-          isBlank: false
-        });
-      });
-    });
-    return segments.filter(({ raw, detection, lower, isBlank }) => {
-      if (isBlank) return true;
-      if (brandKey && normalizeValue(raw) === brandKey) return false;
-      if (brandKey && normalizeValue(detection) === brandKey) return false;
-
-      // Filter out single character garbage (vertical text reading)
-      // Keep 'a' and 'I' as they are valid words
-      if (detection.length === 1 && !/[aAiI]/.test(detection)) return false;
-
-      // Filter out lines that are just numbers or special chars (often timestamps or metrics read poorly)
-      if (/^[\d\W]+$/.test(detection)) return false;
-
-      return true;
-    });
-  };
-
-  const removeTruncatedPreviews = (segments) =>
-    segments.filter((segment, index) => {
-      if (!segment.detection) return true;
-      if (!ELLIPSIS_LINE_PATTERN.test(segment.detection)) return true;
-      const base = segment.detection.replace(ELLIPSIS_LINE_PATTERN, '').trim();
-      if (!base) return false;
-      for (let i = index + 1; i < segments.length; i += 1) {
-        const next = segments[i];
-        if (!next.detection) continue;
-        if (next.detection.toLowerCase().startsWith(base.toLowerCase())) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-  const categorizeSegments = (segments) => {
-    const primary = [];
-    const descriptionParts = [];
-    let domain = '';
-    let headline = '';
-    let ctaLabel = '';
-
-    segments.forEach(({ raw, detection, lower, isBlank }) => {
-      if (isBlank && raw === '') {
-        primary.push('');
-        return;
-      }
-      if (!detection) return;
-
-      // Skip UI elements and social interactions
-      if (['like', 'comment', 'share', 'facebook', 'write a comment', 'press enter to post'].includes(lower)) return;
-      if (/^\d+\s+(likes|comments|shares)$/.test(lower)) return;
-      if (['sponsored', 'facebook', 'ad library'].includes(lower)) return;
-
-      // CTA detection
-      if (!ctaLabel && CTA_LABEL_SET.has(lower)) {
-        ctaLabel = detection;
-        return;
-      }
-
-      // Domain detection
-      const domainCandidate = detection.replace(/^https?:\/\//i, '');
-      if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
-        domain = detection;
-        return;
-      }
-
-      // Headline detection (usually shorter, punchy text)
-      if (!headline && detection.length < 100 && detection.length > 10 && !detection.includes('\n')) {
-        // Check if it looks like a headline (no periods, might be capitalized)
-        if (!detection.includes('.') && detection === detection.replace(/\s+/g, ' ').trim()) {
-          headline = detection;
-          return;
-        }
-      }
-
-      // For Facebook feed/modal, most text should go to primary (ad copy)
-      // unless we've already identified structured components
-      if (domain && headline && descriptionParts.length === 0) {
-        // This might be description/link text
-        descriptionParts.push(detection);
-        return;
-      }
-
-      // Default to primary text (main ad copy)
-      primary.push(raw);
-    });
-
-    return {
-      primaryText: primary.join('\n').trim(),
-      domain,
-      headline,
-      description: descriptionParts.join('\n').trim(),
-      ctaLabel
-    };
-  };
-
   const extractTextSegments = (card, brandName) => {
     const rawText = getCardText(card);
-    const segments = removeTruncatedPreviews(cleanSegments(rawText, brandName));
-    const result = categorizeSegments(segments);
-    if (!result.primaryText && rawText.trim()) {
-      result.primaryText = rawText;
+    const parser = (typeof window !== 'undefined' && window.SwipekitText && window.SwipekitText.parseAdText) || null;
+    if (parser) {
+      return parser(rawText, brandName);
     }
-    const primaryOnly = (result.primaryText || '')
-      .split('\n')
-      .map((line) => line.trimEnd())
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-    const fullAdCopy = primaryOnly || rawText.trim();
-    return { rawText, fullAdCopy, ...result };
+    if (!parserWarningShown) {
+      parserWarningShown = true;
+      console.warn('Swipekit: text parser missing; ad copy/link parsing may be degraded');
+    }
+    return {
+      rawText,
+      fullAdCopy: rawText,
+      primaryText: rawText,
+      domain: '',
+      headline: '',
+      description: '',
+      ctaLabel: ''
+    };
   };
 
   const captureCard = (card) => {
@@ -920,45 +690,86 @@
     const original = button.dataset.defaultLabel || 'Save';
     updateButtonLabel(button, 'Saving...');
 
-    try {
-      await expandAdCopy(card);
-    } catch (e) {
-      console.warn('Swipekit: Expansion error', e);
-    }
-
-    // Small delay to ensure DOM has updated after expansion
-    await new Promise(resolve => requestAnimationFrame(resolve));
-
-    const payload = captureCard(card);
-    const hasCopy = typeof payload.text === 'string' && payload.text.replace(/\s/g, '').length > 0;
-    if (!hasCopy && !payload.imageUrls.length && !payload.videoUrls.length) {
-      updateButtonLabel(button, original);
-      button.disabled = false;
-      showToast('Swipekit: nothing to capture', true);
-      return;
-    }
-
-    try {
-      chrome.runtime.sendMessage({ type: 'SAVE_AD_ITEM', item: payload }, (response) => {
-        button.disabled = false;
-        if (chrome.runtime.lastError || !response?.ok) {
-          const errorMessage = response?.error || chrome.runtime.lastError?.message || 'Swipekit save failed';
-          updateButtonLabel(button, original);
-          showToast(errorMessage, true);
-          return;
-        }
-        updateButtonLabel(button, 'Saved');
-        showToast('Saved to Swipe');
-        setTimeout(() => updateButtonLabel(button, original), 1500);
-      });
-    } catch (e) {
+    const restoreButtonState = () => {
       button.disabled = false;
       updateButtonLabel(button, original);
-      if (e.message.includes('Extension context invalidated')) {
-        showToast('Please refresh the page', true);
-      } else {
-        showToast('Swipekit save failed', true);
+    };
+
+    try {
+      try {
+        await expandAdCopy(card);
+      } catch (e) {
+        console.warn('Swipekit: Expansion error', e);
       }
+
+      // Small delay to ensure DOM has updated after expansion
+      await new Promise(resolve => requestAnimationFrame(resolve));
+
+      let payload;
+      let degradedCapture = false;
+      try {
+        payload = captureCard(card);
+      } catch (error) {
+        console.error('Swipekit: capture failed, saving minimal payload', error);
+        degradedCapture = true;
+        payload = {
+          id: createId(),
+          platform: detectPlatform(),
+          capturedAt: new Date().toISOString(),
+          pageUrl: window.location.href,
+          text: '',
+          imageUrls: [],
+          videoUrls: [],
+          brandName: '',
+          brandLogo: null,
+          extra: {
+            rawText: '',
+            adCopy: '',
+            fullAdCopy: '',
+            primaryText: '',
+            domain: '',
+            headline: '',
+            linkDescription: '',
+            ctaLabel: '',
+            aspectRatio: null,
+            degradedCapture: true,
+            captureError: error?.message || 'Unknown capture error'
+          }
+        };
+      }
+
+      const hasCopy = typeof payload.text === 'string' && payload.text.replace(/\s/g, '').length > 0;
+      if (!hasCopy && !payload.imageUrls.length && !payload.videoUrls.length && !degradedCapture) {
+        restoreButtonState();
+        showToast('Swipekit: nothing to capture', true);
+        return;
+      }
+
+      try {
+        chrome.runtime.sendMessage({ type: 'SAVE_AD_ITEM', item: payload }, (response) => {
+          button.disabled = false;
+          if (chrome.runtime.lastError || !response?.ok) {
+            const errorMessage = response?.error || chrome.runtime.lastError?.message || 'Swipekit save failed';
+            updateButtonLabel(button, original);
+            showToast(errorMessage, true);
+            return;
+          }
+          updateButtonLabel(button, 'Saved');
+          showToast(degradedCapture ? 'Saved (limited data)' : 'Saved to Swipe');
+          setTimeout(() => updateButtonLabel(button, original), 1500);
+        });
+      } catch (e) {
+        restoreButtonState();
+        if (e.message.includes('Extension context invalidated')) {
+          showToast('Please refresh the page', true);
+        } else {
+          showToast('Swipekit save failed', true);
+        }
+      }
+    } catch (error) {
+      console.error('Swipekit: unexpected save error', error);
+      restoreButtonState();
+      showToast('Swipekit: save failed', true);
     }
   };
 

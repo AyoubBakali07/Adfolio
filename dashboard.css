@@ -583,6 +583,12 @@ button {
   border: 1px solid rgba(115, 88, 255, 0.3);
 }
 
+.tag-chip.warning {
+  background: #fff6e6;
+  color: #b45309;
+  border-color: #fbbf24;
+}
+
 .ad-card-footer {
   margin-top: auto;
 }

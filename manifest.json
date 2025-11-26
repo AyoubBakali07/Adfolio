@@ -14,7 +14,7 @@
     "service_worker": "background.js"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;"
   },
   "action": {
     "default_title": "Swipekit Lite",
@@ -38,7 +38,7 @@
         "https://www.instagram.com/*",
         "https://*.instagram.com/*"
       ],
-      "js": ["contentScript.js"],
+      "js": ["textParsing.js", "contentScript.js"],
       "run_at": "document_idle"
     }
   ]

@@ -125,248 +125,50 @@ const getHostname = (url) => {
   }
 };
 
-const AD_COPY_NOISE = [
-  /^active$/i,
-  /^activelibrary id/i,
-  /^library id/i,
-  /^started running/i,
-  /^platforms?/i,
-  /^\d+\s+ads use this creative/i,
-  /^open dropdown/i,
-  /^see ad details/i,
-  /^see summary details/i,
-  /^see translation/i,
-  /^sponsored$/i,
-  /^facebook ad library/i,
-  /^ad library\b/i,
-  /^landing page\b/i,
-  /^saved \d+/i,
-  /^show more$/i,
-  /^show less$/i
-];
-const TIMESTAMP_PATTERN = /\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}:\d{2}\b/;
-const ELLIPSIS_LINE_PATTERN = /(…|\.\.\.)\s*$/;
-const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
-const DOMAIN_INLINE_PATTERN = /[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i;
-const CTA_LABELS = [
-  'Shop Now',
-  'Learn More',
-  'Sign Up',
-  'Order Now',
-  'Subscribe',
-  'Get Offer',
-  'Contact Us',
-  'Apply Now',
-  'Download',
-  'Install Now',
-  'Watch More',
-  'Book Now',
-  'Get Quote',
-  'See Menu',
-  'Donate Now',
-  'View Details'
-];
-const CTA_LABEL_SET = new Set(CTA_LABELS.map((label) => label.toLowerCase()));
-const CTA_PATTERN = new RegExp(`\\b(${CTA_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
+const getParseAdText = () =>
+  (typeof window !== 'undefined' && window.SwipekitText && window.SwipekitText.parseAdText) || null;
 
-const normalizeLineKey = (line) =>
-  line
-    .toLowerCase()
-    .replace(/…/g, '')
-    .replace(/\.\s*$/, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 160);
-
-const stripBrandPrefix = (line, brandName) => {
-  if (!brandName) return line;
-  const pattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*Sponsored\\s*`, 'i');
-  const stripped = line.replace(pattern, '').trim();
-  if (stripped) return stripped;
-  const brandPattern = new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-  return line.replace(brandPattern, '').trim();
-};
-
-const splitSegmentsByPattern = (segment, regex) => {
-  const results = [];
-  let remaining = segment;
-  while (remaining) {
-    const match = remaining.match(regex);
-    if (!match || typeof match.index !== 'number') {
-      if (remaining.trim()) results.push(remaining.trim());
-      break;
-    }
-    const before = remaining.slice(0, match.index).trim();
-    const after = remaining.slice(match.index + match[0].length).trim();
-    if (before) results.push(before);
-    results.push(match[0].trim());
-    remaining = after;
-  }
-  return results;
-};
-
-const splitLineSegments = (line) => {
-  let segments = [line];
-  [DOMAIN_INLINE_PATTERN, CTA_PATTERN].forEach((regex) => {
-    const buffer = [];
-    segments.forEach((segment) => buffer.push(...splitSegmentsByPattern(segment, regex)));
-    segments = buffer;
-  });
-  return segments;
-};
-
-const metadataPrefixPattern = /(activelibrary id|see ad details|open dropdown|summary details|total active time|platforms?)/i;
-
-const removeMetadataPrefix = (line) => {
-  const lower = line.toLowerCase();
-  const idx = lower.lastIndexOf('sponsored');
-  if (idx > -1) {
-    const prefix = lower.slice(0, idx);
-    if (metadataPrefixPattern.test(prefix)) {
-      return line.slice(idx + 'sponsored'.length).trim();
-    }
-  }
-  return line;
-};
-
-const normalizeValue = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
-
-const cleanSegments = (text, brandName = '') => {
-  if (!text) return [];
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\u200b/g, '');
-  const brandKey = brandName ? normalizeValue(brandName) : '';
-  const segments = [];
-  normalized
-    .split(/\n+/)
-    .map((line) => removeMetadataPrefix(stripBrandPrefix(line.trim(), brandName)))
-    .filter(Boolean)
-    .map((line) => line.replace(TIMESTAMP_PATTERN, '').trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      splitLineSegments(line)
-        .map((segment) => segment.trim())
-        .filter(Boolean)
-        .filter((segment) => !AD_COPY_NOISE.some((pattern) => pattern.test(segment)))
-        .filter((segment) => !ELLIPSIS_LINE_PATTERN.test(segment))
-        .forEach((segment) => segments.push(segment));
-    });
-  return segments.filter((segment) => {
-    if (!brandKey) return true;
-    return normalizeValue(segment) !== brandKey;
-  });
-};
-
-const categorizeSegments = (segments) => {
-  const primary = [];
-  const descriptionParts = [];
-  let domain = '';
-  let headline = '';
-  let ctaLabel = '';
-  segments.forEach((segment) => {
-    const normalized = segment.trim();
-    if (!normalized) return;
-    const lowered = normalized.toLowerCase();
-    if (!ctaLabel && CTA_LABEL_SET.has(lowered)) {
-      ctaLabel = normalized;
-      return;
-    }
-    const domainCandidate = normalized.replace(/^https?:\/\//i, '');
-    if (!domain && DOMAIN_ONLY_PATTERN.test(domainCandidate)) {
-      domain = normalized;
-      return;
-    }
-    if (domain && !headline) {
-      headline = normalized;
-      return;
-    }
-    if (domain && headline) {
-      descriptionParts.push(normalized);
-      return;
-    }
-    primary.push(normalized);
-  });
+const parseAdCopy = (text, brandName = '') => {
+  const parser = getParseAdText();
+  if (parser) return parser(text || '', brandName);
+  const fallback = (text || '').trim();
   return {
-    primaryText: primary.join('\n').trim(),
-    domain,
-    headline,
-    description: descriptionParts.join('\n').trim(),
-    ctaLabel
+    rawText: text || '',
+    fullAdCopy: fallback,
+    primaryText: fallback,
+    domain: '',
+    headline: '',
+    description: '',
+    ctaLabel: ''
   };
-};
-
-const deriveTextSegments = (text, brandName = '') => {
-  const segments = cleanSegments(text, brandName);
-  const categorized = categorizeSegments(segments);
-  if (!categorized.primaryText && text?.trim()) categorized.primaryText = text.trim();
-  return categorized;
 };
 
 const getAdCopy = (item) => {
   const extra = item?.extra || {};
-  const full = (extra.fullAdCopy || extra.rawText || item?.text || '').trim();
-  if (full) {
-    const cleaned = cleanSegments(full, item?.brandName || '').join('\n').trim();
-    if (cleaned) return cleaned;
-    return full;
+  const source = (extra.fullAdCopy || extra.rawText || item?.text || '').trim();
+  if (source) {
+    const parsed = parseAdCopy(source, item?.brandName || '');
+    if (parsed.primaryText) return parsed.primaryText;
+    if (parsed.fullAdCopy) return parsed.fullAdCopy;
   }
   if (extra.adCopy) return extra.adCopy;
-  const sourceText = extra.rawText || item?.text || '';
-  const derived = deriveTextSegments(sourceText, item?.brandName || '');
-  return derived.primaryText || sourceText || '';
-};
-
-const deriveLinkPreviewFromText = (text, brandName = '') => {
-  if (!text) return {};
-  const derived = deriveTextSegments(text, brandName);
-  return {
-    domain: derived.domain || '',
-    headline: derived.headline || '',
-    description: derived.description || '',
-    ctaLabel: derived.ctaLabel || ''
-  };
+  const fallbackParsed = parseAdCopy(item?.text || '', item?.brandName || '');
+  return fallbackParsed.primaryText || fallbackParsed.fullAdCopy || '';
 };
 
 const getLinkPreviewData = (item, primaryText) => {
   const extra = item?.extra || {};
-  const derived = (!extra.domain || !extra.headline || !extra.linkDescription || !extra.ctaLabel) && extra.rawText
-    ? deriveLinkPreviewFromText(extra.rawText, item?.brandName || '')
-    : {};
+  const parsed = (!extra.domain || !extra.headline || !extra.linkDescription || !extra.ctaLabel)
+    ? parseAdCopy(extra.rawText || primaryText || '', item?.brandName || '')
+    : { domain: '', headline: '', description: '', ctaLabel: '' };
+
   return {
-    domain: extra.domain || derived.domain || '',
-    headline: extra.headline || derived.headline || '',
-    description: extra.linkDescription || derived.description || '',
-    ctaLabel: extra.ctaLabel || derived.ctaLabel || '',
+    domain: extra.domain || parsed.domain || '',
+    headline: extra.headline || parsed.headline || '',
+    description: extra.linkDescription || parsed.description || '',
+    ctaLabel: extra.ctaLabel || parsed.ctaLabel || '',
     linkUrl: extra.linkUrl || item.pageUrl || ''
   };
-};
-
-const isValidRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 5;
-
-const getStoredAspectRatio = (item) => {
-  const ratio = item?.extra?.aspectRatio;
-  return isValidRatio(ratio) ? ratio : null;
-};
-
-const applyAspectRatio = (wrapper, ratio) => {
-  if (isValidRatio(ratio)) {
-    wrapper.style.setProperty('--media-aspect-ratio', ratio);
-  } else {
-    wrapper.style.removeProperty('--media-aspect-ratio');
-  }
-};
-
-const watchMediaForAspectRatio = (media, wrapper) => {
-  const update = () => {
-    const width = media.videoWidth || media.naturalWidth || media.clientWidth || media.offsetWidth || 0;
-    const height = media.videoHeight || media.naturalHeight || media.clientHeight || media.offsetHeight || 0;
-    if (width > 0 && height > 0) {
-      applyAspectRatio(wrapper, Number((width / height).toFixed(4)));
-    }
-  };
-  if (media.tagName === 'VIDEO') {
-    media.addEventListener('loadedmetadata', update, { once: true });
-  } else {
-    media.addEventListener('load', update, { once: true });
-  }
 };
 
 const applyFilters = () => {
@@ -637,6 +439,8 @@ const isAllowedTag = (label) => {
   return !DISALLOWED_TAGS.has(normalized);
 };
 
+const isDegradedCapture = (item) => Boolean(item?.extra?.degradedCapture);
+
 const createAdCard = (item) => {
   const card = document.createElement('article');
   card.className = 'ad-card';
@@ -671,9 +475,15 @@ const createAdCard = (item) => {
   if (item.brandName) tagLabels.add(getBrandName(item));
   if (item.platform) tagLabels.add(item.platform.replace(/-/g, ' '));
   if (item.pageUrl) tagLabels.add(getHostname(item.pageUrl));
+  if (isDegradedCapture(item)) tagLabels.add('Partial capture');
   tagLabels.forEach((labelText) => {
     if (isAllowedTag(labelText)) {
-      tags.appendChild(createTagChip(labelText));
+      const chip = createTagChip(labelText);
+      if (labelText === 'Partial capture') {
+        chip.classList.add('warning');
+        chip.title = 'Capture completed with limited data';
+      }
+      tags.appendChild(chip);
     }
   });
 
@@ -794,6 +604,10 @@ const clearAllItems = async () => {
 };
 
 window.addEventListener('DOMContentLoaded', () => {
+  if (!window.SwipekitText?.parseAdText) {
+    console.warn('Swipekit dashboard: text parser not available; link previews and copy may be degraded');
+  }
+
   bindEvent('.hero-search input', 'input', (event) => {
     searchQuery = event.target.value.trim();
     renderItems();
