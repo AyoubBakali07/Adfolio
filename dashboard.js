@@ -158,15 +158,16 @@ const getAdCopy = (item) => {
 
 const getLinkPreviewData = (item, primaryText) => {
   const extra = item?.extra || {};
+  const clean = (value) => (value || '').toString().replace(/\s+/g, ' ').trim();
   const parsed = (!extra.domain || !extra.headline || !extra.linkDescription || !extra.ctaLabel)
     ? parseAdCopy(extra.rawText || primaryText || '', item?.brandName || '')
     : { domain: '', headline: '', description: '', ctaLabel: '' };
 
   return {
-    domain: extra.domain || parsed.domain || '',
-    headline: extra.headline || parsed.headline || '',
-    description: extra.linkDescription || parsed.description || '',
-    ctaLabel: extra.ctaLabel || parsed.ctaLabel || '',
+    domain: clean(extra.domain) || clean(parsed.domain) || '',
+    headline: clean(extra.headline) || clean(parsed.headline) || '',
+    description: clean(extra.linkDescription) || clean(parsed.description) || '',
+    ctaLabel: clean(extra.ctaLabel) || clean(parsed.ctaLabel) || '',
     linkUrl: extra.linkUrl || item.pageUrl || ''
   };
 };
@@ -292,49 +293,6 @@ const createDescriptionBlock = (text) => {
       container.classList.remove('collapsed');
     }
   });
-
-  return container;
-};
-
-const createLinkPreview = (item, primaryText) => {
-  const { domain, headline, description, ctaLabel, linkUrl } = getLinkPreviewData(item, primaryText);
-  if (!domain && !headline && !description && !ctaLabel) return null;
-  const container = document.createElement('div');
-  container.className = 'ad-card-link-preview';
-
-  if (domain) {
-    const domainEl = document.createElement('p');
-    domainEl.className = 'ad-card-link-domain';
-    domainEl.textContent = domain.toUpperCase();
-    container.appendChild(domainEl);
-  }
-
-  if (headline) {
-    const headlineEl = document.createElement('p');
-    headlineEl.className = 'ad-card-link-headline';
-    headlineEl.textContent = headline;
-    container.appendChild(headlineEl);
-  }
-
-  if (description) {
-    const descEl = document.createElement('p');
-    descEl.className = 'ad-card-link-description';
-    descEl.textContent = description;
-    container.appendChild(descEl);
-  }
-
-  if (ctaLabel) {
-    const ctaBtn = document.createElement('button');
-    ctaBtn.type = 'button';
-    ctaBtn.className = 'ad-card-link-cta';
-    ctaBtn.textContent = ctaLabel;
-    ctaBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const target = linkUrl || item.pageUrl;
-      if (target) window.open(target, '_blank', 'noopener');
-    });
-    container.appendChild(ctaBtn);
-  }
 
   return container;
 };
@@ -523,7 +481,6 @@ const buildDetailTags = (item) => {
   wrap.className = 'detail-tags';
 
   const tags = [
-    getBrandName(item),
     item.platform ? item.platform.replace(/-/g, ' ') : '',
     item.pageUrl ? getHostname(item.pageUrl) : '',
     isDegradedCapture(item) ? 'Partial capture' : ''
@@ -614,66 +571,141 @@ const buildDetailContent = (item, mediaEl) => {
 
   const adCopy = getAdCopy(item);
   const linkPreviewData = getLinkPreviewData(item, adCopy);
-
-  const buildBreakdown = () => {
-    const { domain, headline, description, ctaLabel } = linkPreviewData;
-    const hasAny = adCopy || headline || description || ctaLabel || domain;
-    if (!hasAny) return null;
-
-    const section = document.createElement('section');
-    section.className = 'detail-breakdown';
-
-    const makeRow = (label, value) => {
-      if (!value) return null;
-      const row = document.createElement('div');
-      row.className = 'detail-breakdown-row';
-      const heading = document.createElement('h4');
-      heading.textContent = label;
-      const body = document.createElement('p');
-      body.textContent = value;
-      row.appendChild(heading);
-      row.appendChild(body);
-      return row;
-    };
-
-    [
-      makeRow('Ad Copy', adCopy),
-      makeRow('Headline', headline),
-      makeRow('Description', description),
-      makeRow('CTA', ctaLabel),
-      makeRow('Domain', domain)
-    ]
-      .filter(Boolean)
-      .forEach((row) => section.appendChild(row));
-
-    return section;
+  const { domain, headline, description, ctaLabel, linkUrl } = linkPreviewData;
+  const seenText = new Set();
+  const takeUnique = (value) => {
+    const clean = (value || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    const key = clean.toLowerCase();
+    if (seenText.has(key)) return '';
+    seenText.add(key);
+    return clean;
   };
 
   const header = document.createElement('header');
   header.className = 'detail-header';
+
+  const brandStack = document.createElement('div');
+  brandStack.className = 'detail-brand';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'detail-brand-avatar';
+  if (item.brandLogo) {
+    const img = document.createElement('img');
+    img.src = item.brandLogo;
+    img.alt = getBrandName(item);
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = getBrandName(item).charAt(0).toUpperCase();
+  }
+
+  const brandText = document.createElement('div');
+  brandText.className = 'detail-brand-text';
   const title = document.createElement('h2');
   title.textContent = getBrandName(item);
-  const meta = document.createElement('p');
-  meta.className = 'detail-meta';
-  meta.textContent = `Saved ${formatFullDate(item.capturedAt) || formatRelativeTime(item.capturedAt)} · ${item.platform || 'ad'}`;
+  const metaLine = document.createElement('p');
+  metaLine.className = 'detail-meta';
+  metaLine.textContent = `${formatFullDate(item.capturedAt) || formatRelativeTime(item.capturedAt)} · ${item.platform || 'ad'}`;
+  brandText.appendChild(title);
+  brandText.appendChild(metaLine);
 
-  header.appendChild(title);
-  header.appendChild(meta);
+  brandStack.appendChild(avatar);
+  brandStack.appendChild(brandText);
 
-  const copy = document.createElement('div');
-  copy.className = 'detail-copy';
-  copy.textContent = adCopy || 'No ad copy captured.';
+  const metaRow = document.createElement('div');
+  metaRow.className = 'detail-meta-row';
+  [
+    { label: 'Saved', value: formatFullDate(item.capturedAt) || formatRelativeTime(item.capturedAt) },
+    { label: 'Platform', value: item.platform ? item.platform.replace(/-/g, ' ') : '' },
+    { label: 'Source', value: domain || getHostname(item.pageUrl) }
+  ]
+    .filter(({ value }) => Boolean((value || '').trim()))
+    .forEach(({ label, value }) => {
+      const chip = document.createElement('span');
+      chip.className = 'meta-chip';
+      const chipLabel = document.createElement('small');
+      chipLabel.textContent = label;
+      const chipValue = document.createElement('strong');
+      chipValue.textContent = value;
+      chip.appendChild(chipLabel);
+      chip.appendChild(chipValue);
+      metaRow.appendChild(chip);
+    });
 
-  const breakdown = buildBreakdown();
-  const linkPreview = createLinkPreview(item, adCopy);
+  header.appendChild(brandStack);
+  header.appendChild(metaRow);
+
   const tags = buildDetailTags(item);
+
+  const copyCard = document.createElement('section');
+  copyCard.className = 'detail-copy-card';
+  const copyLabel = document.createElement('div');
+  copyLabel.className = 'detail-section-label';
+  copyLabel.textContent = 'Ad copy';
+  const copyBody = document.createElement('p');
+  copyBody.className = 'detail-copy-body';
+  const copyText = takeUnique(adCopy || description || headline);
+  copyBody.textContent = copyText || 'No ad copy captured.';
+  copyCard.appendChild(copyLabel);
+  copyCard.appendChild(copyBody);
+
+  const headlineText = takeUnique(headline);
+  const descriptionText = takeUnique(description);
+  const ctaText = takeUnique(ctaLabel);
+
+  const linkInsights = (() => {
+    const hasContent = domain || headlineText || descriptionText || ctaText;
+    if (!hasContent) return null;
+    const section = document.createElement('section');
+    section.className = 'detail-link-card';
+
+    const headerRow = document.createElement('div');
+    headerRow.className = 'detail-link-header';
+
+    if (domain) {
+      const domainChip = document.createElement('span');
+      domainChip.className = 'detail-domain-chip';
+      domainChip.textContent = domain.toUpperCase();
+      headerRow.appendChild(domainChip);
+    }
+
+    if (ctaText) {
+      const ctaBtn = document.createElement('button');
+      ctaBtn.type = 'button';
+      ctaBtn.className = 'detail-cta';
+      ctaBtn.textContent = ctaText;
+      ctaBtn.addEventListener('click', () => {
+        const target = linkUrl || item.pageUrl;
+        if (target) window.open(target, '_blank', 'noopener');
+      });
+      headerRow.appendChild(ctaBtn);
+    }
+
+    section.appendChild(headerRow);
+
+    if (headlineText) {
+      const h4 = document.createElement('h4');
+      h4.className = 'detail-link-headline';
+      h4.textContent = headlineText;
+      section.appendChild(h4);
+    }
+
+    if (descriptionText) {
+      const desc = document.createElement('p');
+      desc.className = 'detail-link-description';
+      desc.textContent = descriptionText;
+      section.appendChild(desc);
+    }
+
+    return section;
+  })();
+
   const actions = buildDetailActions(item, mediaEl);
 
   content.appendChild(header);
-  content.appendChild(tags);
-  content.appendChild(copy);
-  if (breakdown) content.appendChild(breakdown);
-  if (linkPreview) content.appendChild(linkPreview);
+  if (tags.children.length) content.appendChild(tags);
+  content.appendChild(copyCard);
+  if (linkInsights) content.appendChild(linkInsights);
   content.appendChild(actions);
   return content;
 };

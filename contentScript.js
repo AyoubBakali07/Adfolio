@@ -495,7 +495,13 @@
     return null;
   };
 
-  const sanitize = (text) => text.replace(/\s+/g, ' ').trim();
+  const stripTimestampNoise = (text = '') => {
+    if (!text) return '';
+    // Remove video scrubber strings like "0:00 / 1:05" or truncated "0:00 / 1:"
+    return text.replace(/\b\d{1,2}:\d{2}\s*\/\s*\d{1,2}(?::\d{0,2})?\b/g, '');
+  };
+
+  const sanitize = (text) => stripTimestampNoise(text).replace(/\s+/g, ' ').trim();
 
   const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
   const hasDomainToken = (text = '') => /[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i.test(text);
@@ -764,7 +770,8 @@
     container.appendChild(clone);
 
     const text = container.innerText || container.textContent || '';
-    return text.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
+    const withoutTimestamps = stripTimestampNoise(text);
+    return withoutTimestamps.replace(/\u200b/g, '').replace(/\r\n/g, '\n');
   };
 
   const extractTextSegments = (card, brandName) => {
