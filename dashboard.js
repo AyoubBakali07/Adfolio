@@ -17,6 +17,27 @@ let items = [];
 let searchQuery = '';
 const pendingDeletions = new Map();
 let pendingClear = null;
+let videoObserver = null;
+
+const ensureVideoObserver = () => {
+  if (videoObserver) return videoObserver;
+  videoObserver = new IntersectionObserver(() => {}, { threshold: [0, 0.35, 0.6, 1] });
+  return videoObserver;
+};
+
+const attachAutoplayBehavior = (video) => {
+  ensureVideoObserver().observe(video);
+  video.addEventListener('mouseenter', () => video.play().catch(() => {}));
+  video.addEventListener('mouseleave', () => video.pause());
+  video.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (video.paused) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  });
+};
 
 const cancelPendingDeletions = () => {
   pendingDeletions.forEach(({ timer, toastDismiss }) => {
@@ -174,7 +195,7 @@ const getLinkPreviewData = (item, primaryText) => {
     headline: clean(extra.headline) || clean(parsed.headline) || '',
     description: clean(extra.linkDescription) || clean(parsed.description) || '',
     ctaLabel: clean(extra.ctaLabel) || clean(parsed.ctaLabel) || '',
-    linkUrl: extra.linkUrl || item.pageUrl || ''
+    linkUrl: clean(extra.linkUrl) || clean(extra.ctaLink) || item.pageUrl || ''
   };
 };
 
@@ -213,8 +234,11 @@ const createMediaElement = (item) => {
     wrapper.dataset.aspectRatio = ratio.toFixed(2);
   }
 
+  const cachedImage = (item?.extra?.cachedImageDataUrl || item?.extra?.cachedVideoPoster) || null;
   const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
   const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
+  const fallbackImage = imageUrl || cachedImage;
+  const posterSource = cachedImage || imageUrl || null;
 
   const showLoaded = () => {
     wrapper.classList.remove('loading');
@@ -229,6 +253,7 @@ const createMediaElement = (item) => {
     video.playsInline = true;
     video.controls = true;
     video.src = videoUrl;
+    if (posterSource) video.poster = posterSource;
     video.addEventListener(
       'loadedmetadata',
       () => {
@@ -239,14 +264,25 @@ const createMediaElement = (item) => {
       },
       { once: true }
     );
-    video.addEventListener('error', showLoaded, { once: true });
+    video.addEventListener('error', () => {
+      if (cachedImage) {
+        const img = document.createElement('img');
+        img.src = cachedImage;
+        img.alt = 'Ad creative';
+        wrapper.innerHTML = '';
+        wrapper.appendChild(img);
+        showLoaded();
+        return;
+      }
+      showLoaded();
+    }, { once: true });
     wrapper.appendChild(video);
     return wrapper;
   }
 
-  if (imageUrl) {
+  if (fallbackImage) {
     const image = document.createElement('img');
-    image.src = imageUrl;
+    image.src = fallbackImage;
     image.alt = 'Ad creative';
     image.addEventListener(
       'load',
@@ -258,7 +294,13 @@ const createMediaElement = (item) => {
       },
       { once: true }
     );
-    image.addEventListener('error', showLoaded, { once: true });
+    image.addEventListener('error', () => {
+      if (imageUrl && cachedImage && image.src !== cachedImage) {
+        image.src = cachedImage;
+        return;
+      }
+      showLoaded();
+    }, { once: true });
     wrapper.appendChild(image);
     return wrapper;
   }
@@ -456,22 +498,40 @@ const buildDetailMedia = (item) => {
   const mediaWrapper = document.createElement('div');
   mediaWrapper.className = 'detail-media';
 
+  const cachedImage = (item?.extra?.cachedImageDataUrl || item?.extra?.cachedVideoPoster) || null;
   const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
   const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
+  const fallbackImage = imageUrl || cachedImage;
+  const posterSource = cachedImage || imageUrl || null;
 
   if (videoUrl) {
     const video = document.createElement('video');
     video.controls = true;
     video.playsInline = true;
     video.src = videoUrl;
+    if (posterSource) video.poster = posterSource;
+    video.addEventListener('error', () => {
+      if (cachedImage) {
+        mediaWrapper.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = cachedImage;
+        img.alt = 'Ad creative';
+        mediaWrapper.appendChild(img);
+      }
+    }, { once: true });
     mediaWrapper.appendChild(video);
     return mediaWrapper;
   }
 
-  if (imageUrl) {
+  if (fallbackImage) {
     const img = document.createElement('img');
-    img.src = imageUrl;
+    img.src = fallbackImage;
     img.alt = 'Ad creative';
+    img.addEventListener('error', () => {
+      if (imageUrl && cachedImage && img.src !== cachedImage) {
+        img.src = cachedImage;
+      }
+    }, { once: true });
     mediaWrapper.appendChild(img);
     return mediaWrapper;
   }
@@ -683,7 +743,7 @@ const buildDetailContent = (item, mediaEl) => {
       ctaBtn.className = 'detail-cta';
       ctaBtn.textContent = ctaText;
       ctaBtn.addEventListener('click', () => {
-        const target = linkUrl || item.pageUrl;
+        const target = linkUrl || getAdPageUrl(item) || item.pageUrl;
         if (target) window.open(target, '_blank', 'noopener');
       });
       headerRow.appendChild(ctaBtn);

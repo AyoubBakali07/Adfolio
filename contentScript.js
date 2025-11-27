@@ -130,6 +130,8 @@
 
   let parserWarningShown = false;
 
+  const MAX_EMBED_BYTES = 3 * 1024 * 1024; // guard against storage blowups
+
   const extractAdIdFromUrl = () => {
     try {
       const url = new URL(window.location.href);
@@ -166,6 +168,64 @@
   };
 
   const detectAdId = (card) => extractAdIdFromUrl() || extractAdIdFromCard(card);
+
+  const unwrapFacebookRedirect = (url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes('l.facebook.com') && parsed.pathname === '/l.php') {
+        const target = parsed.searchParams.get('u');
+        if (target) return decodeURIComponent(target);
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  };
+
+  const findCtaLink = (card) => {
+    const candidates = [];
+    const elements = Array.from(card.querySelectorAll('a[href], [role="link"][href], button[role="link"][href]'));
+    elements.forEach((el, index) => {
+      const rawHref = el.getAttribute('href');
+      const clean = unwrapFacebookRedirect(rawHref);
+      const url = normalizeUrl(clean);
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        if (!/^https?:$/i.test(parsed.protocol)) return;
+        const host = parsed.hostname.toLowerCase();
+        const isFacebook = host.includes('facebook.com') || host.includes('fb.com') || host.includes('instagram.com');
+        const score = isFacebook ? 2 : 0;
+        candidates.push({ url: parsed.toString(), score, index });
+      } catch {
+        return;
+      }
+    });
+
+    if (!candidates.length) return null;
+    return candidates.sort((a, b) => a.score - b.score || a.index - b.index)[0].url;
+  };
+
+  const fetchAsDataUrl = async (url, maxBytes = MAX_EMBED_BYTES) => {
+    if (!url) return null;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      if (maxBytes && contentLength && contentLength > maxBytes) throw new Error('Asset too large');
+      const blob = await response.blob();
+      if (maxBytes && blob.size > maxBytes) throw new Error('Asset too large');
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.warn('Swipekit: failed to embed media', { url, error });
+      return null;
+    }
+  };
 
   const parseSrcsetDescriptor = (descriptor) => {
     const match = descriptor.trim().match(/(\d+(?:\.\d+)?)(w|x)/i);
@@ -590,6 +650,76 @@
     return candidates.sort((a, b) => b.area - a.area)[0].el;
   };
 
+  const captureVideoPoster = async (videoEl) => {
+    if (!videoEl) return null;
+    const waitForReady = () =>
+      new Promise((resolve) => {
+        if (videoEl.readyState >= 2) {
+          resolve();
+          return;
+        }
+        let resolved = false;
+        const done = () => {
+          if (resolved) return;
+          resolved = true;
+          resolve();
+        };
+        const timer = setTimeout(done, 800);
+        videoEl.addEventListener('loadeddata', () => {
+          clearTimeout(timer);
+          done();
+        }, { once: true });
+        videoEl.addEventListener('error', () => {
+          clearTimeout(timer);
+          done();
+        }, { once: true });
+      });
+
+    await waitForReady();
+    const width = Math.round(videoEl.videoWidth || videoEl.clientWidth || 0);
+    const height = Math.round(videoEl.videoHeight || videoEl.clientHeight || 0);
+    if (!width || !height) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(videoEl, 0, 0, width, height);
+    try {
+      return canvas.toDataURL('image/jpeg', 0.85);
+    } catch (error) {
+      console.warn('Swipekit: failed to capture video poster', error);
+      return null;
+    }
+  };
+
+  const embedPrimaryMedia = async (payload, card) => {
+    const extra = payload.extra || {};
+    let cachedImageDataUrl = extra.cachedImageDataUrl || null;
+    let cachedVideoPoster = extra.cachedVideoPoster || null;
+
+    const primaryImageUrl = (payload.imageUrls || []).find(Boolean);
+    if (!cachedImageDataUrl && primaryImageUrl) {
+      cachedImageDataUrl = await fetchAsDataUrl(primaryImageUrl);
+    }
+
+    if (!cachedImageDataUrl) {
+      const mediaEl = getPrimaryMediaElement(card);
+      if (mediaEl && mediaEl.tagName === 'VIDEO') {
+        cachedVideoPoster = await captureVideoPoster(mediaEl);
+        if (cachedVideoPoster) cachedImageDataUrl = cachedVideoPoster;
+      }
+    }
+
+    payload.extra = {
+      ...extra,
+      cachedImageDataUrl: cachedImageDataUrl || null,
+      cachedVideoPoster: cachedVideoPoster || null
+    };
+
+    return payload;
+  };
+
   const getVisibleTextBlocks = (card) => {
     const nodes = Array.from(card.querySelectorAll('p, span, div, strong, b, h1, h2, h3, h4, h5, h6, a'));
     return nodes
@@ -844,7 +974,7 @@
     const isAdLibrary = platform === 'facebook-ad-library';
 
     // Keep the scraped brand info handy so we don't recompute it or lose it in transit
-    const brandInfo = isAdLibrary ? collectBrandInfo(card) : { brandName: '', brandLogo: null };
+    const brandInfo = collectBrandInfo(card) || { brandName: '', brandLogo: null };
     const scrapedBrandName = brandInfo.brandName || '';
     const scrapedBrandLogo = brandInfo.brandLogo || null;
 
@@ -883,6 +1013,7 @@
     const aspectRatio = detectAspectRatio(card);
     const adId = detectAdId(card);
     const adLibraryUrl = adId ? `https://www.facebook.com/ads/library/?id=${adId}` : '';
+    const ctaLink = findCtaLink(card);
 
     // Structure the data to match Ad Library format
     const payload = {
@@ -906,7 +1037,10 @@
         headline: headline || '',
         linkDescription: description || '',
         ctaLabel: ctaLabel || '',
-        aspectRatio: Number.isFinite(aspectRatio) ? aspectRatio : null
+        ctaLink: ctaLink || '',
+        aspectRatio: Number.isFinite(aspectRatio) ? aspectRatio : null,
+        cachedImageDataUrl: null,
+        cachedVideoPoster: null
       }
     };
 
@@ -1004,11 +1138,20 @@
             headline: '',
             linkDescription: '',
             ctaLabel: '',
+            ctaLink: '',
             aspectRatio: null,
+            cachedImageDataUrl: null,
+            cachedVideoPoster: null,
             degradedCapture: true,
             captureError: error?.message || 'Unknown capture error'
           }
         };
+      }
+
+      try {
+        payload = await embedPrimaryMedia(payload, card);
+      } catch (error) {
+        console.warn('Swipekit: embedding media failed', error);
       }
 
       const hasCopy = typeof payload.text === 'string' && payload.text.replace(/\s/g, '').length > 0;
