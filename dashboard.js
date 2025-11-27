@@ -195,9 +195,26 @@ const bindEvent = (selector, eventName, handler, { silent = false } = {}) => {
 
 const createMediaElement = (item) => {
   const wrapper = document.createElement('div');
-  wrapper.className = 'ad-card-media';
+  wrapper.className = 'ad-card-media loading';
+  const skeleton = document.createElement('div');
+  skeleton.className = 'media-skeleton';
+  wrapper.appendChild(skeleton);
+
+  const ratio = getAspectRatio(item);
+  if (ratio) {
+    wrapper.style.aspectRatio = ratio;
+    wrapper.dataset.aspectRatio = ratio.toFixed(2);
+  }
+
   const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
   const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
+
+  const showLoaded = () => {
+    wrapper.classList.remove('loading');
+    wrapper.style.removeProperty('aspect-ratio');
+    wrapper.style.removeProperty('height');
+    skeleton.remove();
+  };
 
   if (videoUrl) {
     const video = document.createElement('video');
@@ -205,6 +222,17 @@ const createMediaElement = (item) => {
     video.playsInline = true;
     video.controls = true;
     video.src = videoUrl;
+    video.addEventListener(
+      'loadedmetadata',
+      () => {
+        if (!wrapper.style.aspectRatio && isValidRatio(video.videoWidth / video.videoHeight)) {
+          wrapper.style.aspectRatio = Number((video.videoWidth / video.videoHeight).toFixed(4));
+        }
+        showLoaded();
+      },
+      { once: true }
+    );
+    video.addEventListener('error', showLoaded, { once: true });
     wrapper.appendChild(video);
     return wrapper;
   }
@@ -213,6 +241,17 @@ const createMediaElement = (item) => {
     const image = document.createElement('img');
     image.src = imageUrl;
     image.alt = 'Ad creative';
+    image.addEventListener(
+      'load',
+      () => {
+        if (!wrapper.style.aspectRatio && isValidRatio(image.naturalWidth / image.naturalHeight)) {
+          wrapper.style.aspectRatio = Number((image.naturalWidth / image.naturalHeight).toFixed(4));
+        }
+        showLoaded();
+      },
+      { once: true }
+    );
+    image.addEventListener('error', showLoaded, { once: true });
     wrapper.appendChild(image);
     return wrapper;
   }
@@ -221,6 +260,7 @@ const createMediaElement = (item) => {
   placeholder.className = 'ad-card-placeholder';
   placeholder.textContent = 'No media yet';
   wrapper.appendChild(placeholder);
+  showLoaded();
   return wrapper;
 };
 
@@ -237,7 +277,8 @@ const createDescriptionBlock = (text) => {
   toggle.type = 'button';
   toggle.className = 'ad-card-toggle';
   toggle.textContent = 'Show more';
-  toggle.addEventListener('click', () => {
+  toggle.addEventListener('click', (event) => {
+    event.stopPropagation();
     const expanded = container.classList.toggle('expanded');
     container.classList.toggle('collapsed', !expanded);
     toggle.textContent = expanded ? 'Show less' : 'Show more';
@@ -370,16 +411,6 @@ const createBrandHeader = (item) => {
   return container;
 };
 
-const handleCardSave = (item) => {
-  const mediaUrl = (item.imageUrls && item.imageUrls.find(Boolean)) || (item.videoUrls && item.videoUrls.find(Boolean));
-  const target = mediaUrl || item.pageUrl;
-  if (target) {
-    window.open(target, '_blank', 'noopener');
-  } else {
-    alert('No media or link available to open for this ad yet.');
-  }
-};
-
 const finalizeDelete = async (id) => {
   const pending = pendingDeletions.get(id);
   if (!pending) return;
@@ -440,6 +471,244 @@ const isAllowedTag = (label) => {
 };
 
 const isDegradedCapture = (item) => Boolean(item?.extra?.degradedCapture);
+const isValidRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 5;
+const getAspectRatio = (item) => {
+  const ratio = item?.extra?.aspectRatio;
+  return isValidRatio(ratio) ? ratio : null;
+};
+
+let detailModalEl = null;
+
+const closeDetailModal = () => {
+  if (!detailModalEl) return;
+  const modal = detailModalEl;
+  modal.classList.remove('visible');
+  setTimeout(() => modal.remove(), 200);
+  detailModalEl = null;
+};
+
+const buildDetailMedia = (item) => {
+  const mediaWrapper = document.createElement('div');
+  mediaWrapper.className = 'detail-media';
+
+  const videoUrl = Array.isArray(item.videoUrls) ? item.videoUrls.find(Boolean) : null;
+  const imageUrl = Array.isArray(item.imageUrls) ? item.imageUrls.find(Boolean) : null;
+
+  if (videoUrl) {
+    const video = document.createElement('video');
+    video.controls = true;
+    video.playsInline = true;
+    video.src = videoUrl;
+    mediaWrapper.appendChild(video);
+    return mediaWrapper;
+  }
+
+  if (imageUrl) {
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.alt = 'Ad creative';
+    mediaWrapper.appendChild(img);
+    return mediaWrapper;
+  }
+
+  const placeholder = document.createElement('div');
+  placeholder.className = 'detail-media-placeholder';
+  placeholder.textContent = 'No media captured';
+  mediaWrapper.appendChild(placeholder);
+  return mediaWrapper;
+};
+
+const buildDetailTags = (item) => {
+  const wrap = document.createElement('div');
+  wrap.className = 'detail-tags';
+
+  const tags = [
+    getBrandName(item),
+    item.platform ? item.platform.replace(/-/g, ' ') : '',
+    item.pageUrl ? getHostname(item.pageUrl) : '',
+    isDegradedCapture(item) ? 'Partial capture' : ''
+  ].filter(Boolean);
+
+  tags.forEach((label) => {
+    if (!isAllowedTag(label)) return;
+    const chip = createTagChip(label);
+    if (label === 'Partial capture') {
+      chip.classList.add('warning');
+      chip.title = 'Capture completed with limited data';
+    }
+    wrap.appendChild(chip);
+  });
+  return wrap;
+};
+
+const buildDetailActions = (item, mediaEl) => {
+  const actions = document.createElement('div');
+  actions.className = 'detail-actions';
+
+  const openAd = document.createElement('button');
+  openAd.type = 'button';
+  openAd.className = 'detail-btn primary';
+  openAd.textContent = 'Open ad page';
+  openAd.addEventListener('click', () => {
+    if (item.pageUrl) window.open(item.pageUrl, '_blank', 'noopener');
+  });
+
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'detail-btn';
+  download.textContent = 'Download media';
+  download.addEventListener('click', async () => {
+    const detectDisplayedMediaUrl = () => {
+      if (!mediaEl) return null;
+      const video = mediaEl.querySelector('video');
+      if (video) return video.currentSrc || video.src || null;
+      const img = mediaEl.querySelector('img');
+      if (img) return img.currentSrc || img.src || null;
+      return null;
+    };
+
+    const fromDisplayed = detectDisplayedMediaUrl();
+    const fromItem =
+      (item.videoUrls && item.videoUrls.find(Boolean)) ||
+      (item.imageUrls && item.imageUrls.find(Boolean)) ||
+      null;
+    const mediaUrl = fromDisplayed || fromItem;
+    if (!mediaUrl) {
+      showToast({ message: 'No media to download.', type: 'error', duration: 2500 });
+      return;
+    }
+
+    const fallbackOpen = () => window.open(mediaUrl, '_blank', 'noopener');
+
+    try {
+      const response = await fetch(mediaUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      try {
+        const urlObj = new URL(mediaUrl);
+        link.download = urlObj.pathname.split('/').pop() || 'media';
+      } catch {
+        link.download = 'media';
+      }
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn('Swipekit: media download failed, opening instead', error);
+      fallbackOpen();
+    }
+  });
+
+  actions.appendChild(openAd);
+  actions.appendChild(download);
+  return actions;
+};
+
+const buildDetailContent = (item, mediaEl) => {
+  const content = document.createElement('div');
+  content.className = 'detail-content';
+
+  const adCopy = getAdCopy(item);
+  const linkPreviewData = getLinkPreviewData(item, adCopy);
+
+  const buildBreakdown = () => {
+    const { domain, headline, description, ctaLabel } = linkPreviewData;
+    const hasAny = adCopy || headline || description || ctaLabel || domain;
+    if (!hasAny) return null;
+
+    const section = document.createElement('section');
+    section.className = 'detail-breakdown';
+
+    const makeRow = (label, value) => {
+      if (!value) return null;
+      const row = document.createElement('div');
+      row.className = 'detail-breakdown-row';
+      const heading = document.createElement('h4');
+      heading.textContent = label;
+      const body = document.createElement('p');
+      body.textContent = value;
+      row.appendChild(heading);
+      row.appendChild(body);
+      return row;
+    };
+
+    [
+      makeRow('Ad Copy', adCopy),
+      makeRow('Headline', headline),
+      makeRow('Description', description),
+      makeRow('CTA', ctaLabel),
+      makeRow('Domain', domain)
+    ]
+      .filter(Boolean)
+      .forEach((row) => section.appendChild(row));
+
+    return section;
+  };
+
+  const header = document.createElement('header');
+  header.className = 'detail-header';
+  const title = document.createElement('h2');
+  title.textContent = getBrandName(item);
+  const meta = document.createElement('p');
+  meta.className = 'detail-meta';
+  meta.textContent = `Saved ${formatFullDate(item.capturedAt) || formatRelativeTime(item.capturedAt)} · ${item.platform || 'ad'}`;
+
+  header.appendChild(title);
+  header.appendChild(meta);
+
+  const copy = document.createElement('div');
+  copy.className = 'detail-copy';
+  copy.textContent = adCopy || 'No ad copy captured.';
+
+  const breakdown = buildBreakdown();
+  const linkPreview = createLinkPreview(item, adCopy);
+  const tags = buildDetailTags(item);
+  const actions = buildDetailActions(item, mediaEl);
+
+  content.appendChild(header);
+  content.appendChild(tags);
+  content.appendChild(copy);
+  if (breakdown) content.appendChild(breakdown);
+  if (linkPreview) content.appendChild(linkPreview);
+  content.appendChild(actions);
+  return content;
+};
+
+const openDetailModal = (item) => {
+  closeDetailModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'detail-modal';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'detail-modal-dialog';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'detail-close';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', closeDetailModal);
+
+  const media = buildDetailMedia(item);
+  const side = buildDetailContent(item, media);
+
+  dialog.appendChild(closeBtn);
+  dialog.appendChild(media);
+  dialog.appendChild(side);
+
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeDetailModal();
+  });
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('visible'));
+  detailModalEl = overlay;
+};
 
 const createAdCard = (item) => {
   const card = document.createElement('article');
@@ -472,7 +741,6 @@ const createAdCard = (item) => {
   const tags = document.createElement('div');
   tags.className = 'ad-card-tags';
   const tagLabels = new Set();
-  if (item.brandName) tagLabels.add(getBrandName(item));
   if (item.platform) tagLabels.add(item.platform.replace(/-/g, ' '));
   if (item.pageUrl) tagLabels.add(getHostname(item.pageUrl));
   if (isDegradedCapture(item)) tagLabels.add('Partial capture');
@@ -487,26 +755,22 @@ const createAdCard = (item) => {
     }
   });
 
-  const footer = document.createElement('div');
-  footer.className = 'ad-card-footer';
-
-  const saveButton = document.createElement('button');
-  saveButton.type = 'button';
-  saveButton.className = 'ad-card-save-btn';
-  saveButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 14-5-2.18L7 17V5h10v12z"/></svg><span>Save</span>';
-  saveButton.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handleCardSave(item);
-  });
-
-  footer.appendChild(saveButton);
-
   body.appendChild(brandRow);
   body.appendChild(description);
   body.appendChild(tags);
-  body.appendChild(footer);
 
+  const viewBtn = document.createElement('button');
+  viewBtn.type = 'button';
+  viewBtn.className = 'ad-card-open';
+  viewBtn.textContent = 'View details';
+  viewBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openDetailModal(item);
+  });
+
+  body.appendChild(viewBtn);
   card.appendChild(body);
+
   return card;
 };
 

@@ -497,6 +497,172 @@
 
   const sanitize = (text) => text.replace(/\s+/g, ' ').trim();
 
+  const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+  const CTA_LABELS = [
+    'shop now',
+    'learn more',
+    'sign up',
+    'subscribe',
+    'order now',
+    'get offer',
+    'contact us',
+    'apply now',
+    'download',
+    'watch more',
+    'book now',
+    'get quote',
+    'see menu',
+    'donate now',
+    'view details'
+  ];
+  const CTA_LABEL_SET = new Set(CTA_LABELS);
+
+  const getPrimaryMediaElement = (card) => {
+    const MIN_DIMENSION = 140;
+    const candidates = [];
+
+    const addCandidate = (el) => {
+      const rect = el.getBoundingClientRect();
+      const width = Math.round(rect.width || el.videoWidth || el.naturalWidth || 0);
+      const height = Math.round(rect.height || el.videoHeight || el.naturalHeight || 0);
+      if (!width || !height) return;
+      if (Math.max(width, height) < MIN_DIMENSION && width * height < MIN_DIMENSION * MIN_DIMENSION) return;
+      candidates.push({ el, area: width * height });
+    };
+
+    card.querySelectorAll('video').forEach(addCandidate);
+    card.querySelectorAll('img').forEach(addCandidate);
+
+    if (!candidates.length) return null;
+    return candidates.sort((a, b) => b.area - a.area)[0].el;
+  };
+
+  const getVisibleTextBlocks = (card) => {
+    const nodes = Array.from(card.querySelectorAll('p, span, div, strong, b, h1, h2, h3, h4, h5, h6, a'));
+    return nodes
+      .map((el) => {
+        const text = sanitize(el.textContent || '');
+        if (!text) return null;
+        const rect = el.getBoundingClientRect();
+        if (!rect || rect.width === 0 || rect.height === 0) return null;
+        return { el, text, rect };
+      })
+      .filter(Boolean);
+  };
+
+  const collectAdLibraryTextSegments = (card) => {
+    const sponsoredNode = Array.from(card.querySelectorAll('span, div, strong')).find((node) => normalizeValue(node.textContent) === 'sponsored');
+    const sponsoredBottom = sponsoredNode ? sponsoredNode.getBoundingClientRect().bottom : null;
+
+    const mediaEl = getPrimaryMediaElement(card);
+    if (!mediaEl) return null;
+    const mediaRect = mediaEl.getBoundingClientRect();
+    const mediaTop = mediaRect.top;
+    const mediaBottom = mediaRect.bottom;
+
+    const blocks = getVisibleTextBlocks(card);
+    if (!blocks.length) return null;
+
+    const dedupeByText = (list) => {
+      const seen = new Set();
+      return list.filter(({ text }) => {
+        const key = normalizeValue(text);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    const isInsideHeader = (el) => {
+      if (!sponsoredNode) return false;
+      return sponsoredNode.closest('div, header')?.contains(el);
+    };
+
+    const primaryBlocks = blocks.filter(({ rect, el }) => {
+      if (sponsoredBottom !== null && rect.top < sponsoredBottom - 4) return false;
+      if (rect.bottom > mediaTop + 2) return false;
+      if (isInsideHeader(el)) return false;
+      if (normalizeValue(el.textContent) === 'sponsored') return false;
+      return true;
+    });
+
+    const primaryText = dedupeByText(primaryBlocks)
+      .map(({ text }) => text)
+      .join('\n')
+      .trim();
+
+    const postMediaBlocks = blocks.filter(({ rect }) => rect.top >= mediaBottom - 2);
+
+    const domainBlock = postMediaBlocks.find(({ text }) => DOMAIN_ONLY_PATTERN.test(text.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '')));
+    const domain = domainBlock ? domainBlock.text : '';
+
+    const afterDomain = domainBlock ? postMediaBlocks.slice(postMediaBlocks.indexOf(domainBlock) + 1) : postMediaBlocks;
+    const isHeadlineCandidate = ({ el, text }) => {
+      if (!text || text.length < 3 || text.length > 160) return false;
+      const tag = el.tagName.toLowerCase();
+      if (/^h[1-6]$/.test(tag) || tag === 'strong' || tag === 'b') return true;
+      return !text.includes('\n') && text.length < 120;
+    };
+    const headlineBlock = afterDomain.find(isHeadlineCandidate);
+    const headline = headlineBlock ? headlineBlock.text : '';
+
+    const descriptionBlock = (() => {
+      if (!headlineBlock) return null;
+      const startIndex = afterDomain.indexOf(headlineBlock);
+      return afterDomain.slice(startIndex + 1).find(({ text }) => text.length > 0 && text !== domain && text !== headline);
+    })();
+    const description = descriptionBlock ? descriptionBlock.text : '';
+
+    const normalizedDomain = normalizeValue(domain);
+    const duplicateGuard = new Set(
+      [primaryText, headline, description, domain].map((v) => normalizeValue(v)).filter(Boolean)
+    );
+
+    const ctaCandidates = Array.from(card.querySelectorAll('button, [role="button"]'))
+      .map((btn) => {
+        const rect = btn.getBoundingClientRect();
+        const text = sanitize(btn.textContent || '');
+        return { btn, rect, text, normalized: normalizeValue(text) };
+      })
+      .filter(({ rect, text, normalized }) => {
+        if (!text || text.length > 40) return false;
+        if (rect.top < mediaBottom - 4) return false;
+        if (DOMAIN_ONLY_PATTERN.test(normalized.replace(/^https?:\/\//, '').replace(/^www\./, ''))) return false;
+        if (normalized.includes('.')) return false; // avoid domains in CTA
+        if (duplicateGuard.has(normalized)) return false;
+        return true;
+      });
+
+    const pickCta = () => {
+      if (!ctaCandidates.length) return '';
+      const sorted = ctaCandidates.sort((a, b) => {
+        const aKnown = CTA_LABEL_SET.has(a.normalized);
+        const bKnown = CTA_LABEL_SET.has(b.normalized);
+        if (aKnown && !bKnown) return -1;
+        if (!aKnown && bKnown) return 1;
+        return a.text.length - b.text.length;
+      });
+      return sorted[0].text;
+    };
+
+    const ctaLabel = pickCta();
+
+    const rawText = getCardText(card);
+    const fullAdCopy = primaryText || rawText;
+
+    if (!primaryText && !headline && !description && !domain && !ctaLabel) return null;
+
+    return {
+      rawText,
+      fullAdCopy,
+      primaryText: primaryText || fullAdCopy || rawText,
+      domain,
+      headline,
+      description,
+      ctaLabel
+    };
+  };
+
   const EXPAND_LABELS = [
     'see more',
     'show more',
@@ -577,6 +743,13 @@
   };
 
   const extractTextSegments = (card, brandName) => {
+    const platform = detectPlatform();
+
+    if (platform === 'facebook-ad-library') {
+      const structured = collectAdLibraryTextSegments(card);
+      if (structured) return structured;
+    }
+
     const rawText = getCardText(card);
     const parser = (typeof window !== 'undefined' && window.SwipekitText && window.SwipekitText.parseAdText) || null;
     if (parser) {
@@ -598,13 +771,36 @@
   };
 
   const captureCard = (card) => {
-    const { brandName, brandLogo } = collectBrandInfo(card);
-    const { rawText, fullAdCopy, primaryText, domain, headline, description, ctaLabel } = extractTextSegments(card, brandName);
+    const platform = detectPlatform();
+    const isAdLibrary = platform === 'facebook-ad-library';
+
+    // Keep the scraped brand info handy so we don't recompute it or lose it in transit
+    const brandInfo = isAdLibrary ? collectBrandInfo(card) : { brandName: '', brandLogo: null };
+    const scrapedBrandName = brandInfo.brandName || '';
+    const scrapedBrandLogo = brandInfo.brandLogo || null;
+
+    // Only use the structured Ad Library scraping on Ad Library pages; elsewhere fall back to plain text capture
+    const textSegments = isAdLibrary
+      ? extractTextSegments(card, scrapedBrandName)
+      : (() => {
+          const fallbackText = getCardText(card);
+          return {
+            rawText: fallbackText,
+            fullAdCopy: fallbackText,
+            primaryText: fallbackText,
+            domain: '',
+            headline: '',
+            description: '',
+            ctaLabel: ''
+          };
+        })();
+
+    const { rawText, fullAdCopy, primaryText, domain, headline, description, ctaLabel } = textSegments;
 
     // Debug logging
     console.log('Swipekit: Card capture debug', {
-      brandName,
-      brandLogo,
+      brandName: scrapedBrandName,
+      brandLogo: scrapedBrandLogo,
       primaryText: primaryText?.substring(0, 100),
       fullAdCopy: fullAdCopy?.substring(0, 100),
       rawText: rawText?.substring(0, 100),
@@ -620,14 +816,14 @@
     // Structure the data to match Ad Library format
     const payload = {
       id: createId(),
-      platform: detectPlatform(),
+      platform,
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
       text: primaryText || fullAdCopy || rawText, // Main ad copy
       imageUrls: collectImages(card),
       videoUrls: collectVideos(card),
-      brandName,
-      brandLogo,
+      brandName: scrapedBrandName,
+      brandLogo: scrapedBrandLogo,
       extra: {
         rawText: rawText,
         adCopy: primaryText || fullAdCopy || rawText,

@@ -359,6 +359,8 @@ button {
   position: relative;
   overflow: hidden;
   border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  min-height: 0;
+  display: block;
 }
 
 .ad-card-media img,
@@ -367,7 +369,13 @@ button {
   height: auto;
   display: block;
   object-fit: contain;
-  background: #000;
+  background: transparent;
+  transition: opacity 0.2s ease;
+}
+
+.ad-card-media.loading img,
+.ad-card-media.loading video {
+  opacity: 0;
 }
 
 .ad-card-placeholder {
@@ -377,6 +385,180 @@ button {
   place-items: center;
   color: var(--muted);
   font-size: 0.9rem;
+  background: var(--surface-muted);
+  z-index: 1;
+}
+
+.media-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.04));
+  background-size: 200% 100%;
+  animation: swipe-skeleton 1.6s ease-in-out infinite;
+  z-index: 2;
+}
+
+.ad-card-media-chip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #fff;
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 3;
+}
+
+@keyframes swipe-skeleton {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.detail-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.detail-modal.visible {
+  opacity: 1;
+}
+
+.detail-modal-dialog {
+  background: #fff;
+  border-radius: 18px;
+  width: min(1100px, 96vw);
+  max-height: 90vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  position: relative;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.25);
+}
+
+.detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: none;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.detail-modal-dialog .detail-media {
+  background: #000;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+.detail-media img,
+.detail-media video {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+.detail-media-placeholder {
+  color: #fff;
+  opacity: 0.8;
+}
+
+.detail-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.detail-header h2 {
+  margin: 0;
+}
+
+.detail-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.detail-copy {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.detail-breakdown {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-breakdown-row h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.detail-breakdown-row p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.detail-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-btn {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: #f4f2ee;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.detail-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .detail-modal-dialog {
+    grid-template-columns: 1fr;
+    width: 96vw;
+  }
+  .detail-media img,
+  .detail-media video {
+    max-height: 50vh;
+  }
 }
 
 .ad-card-body {
@@ -589,35 +771,21 @@ button {
   border-color: #fbbf24;
 }
 
-.ad-card-footer {
-  margin-top: auto;
-}
-
-.ad-card-save-btn {
-  width: 100%;
+.ad-card-open {
+  align-self: flex-start;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 11px 18px;
-  background: #f4f2ee;
-  font-weight: 600;
+  padding: 10px 16px;
+  background: #f6f3ff;
   color: var(--text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.ad-card-save-btn svg {
-  width: 16px;
-  height: 16px;
-  fill: currentColor;
-}
-
-.ad-card-save-btn:hover {
-  background: #fff;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+.ad-card-open:hover {
+  background: #ece8ff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .empty-state {
