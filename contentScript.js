@@ -498,6 +498,15 @@
   const sanitize = (text) => text.replace(/\s+/g, ' ').trim();
 
   const DOMAIN_ONLY_PATTERN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+  const hasDomainToken = (text = '') => /[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i.test(text);
+  const isUppercaseDotToken = (text = '') => {
+    const trimmed = text.trim();
+    if (!trimmed.includes('.')) return false;
+    const compact = trimmed.replace(/\s+/g, '');
+    if (!/[A-Za-z]/.test(compact)) return false;
+    if (!compact.includes('.')) return false;
+    return compact === compact.toUpperCase();
+  };
   const CTA_LABELS = [
     'shop now',
     'learn more',
@@ -541,6 +550,8 @@
     const nodes = Array.from(card.querySelectorAll('p, span, div, strong, b, h1, h2, h3, h4, h5, h6, a'));
     return nodes
       .map((el) => {
+        // Ignore labels that live inside actionable buttons (e.g., Save/Saving states)
+        if (el.closest('button, [role="button"]')) return null;
         const text = sanitize(el.textContent || '');
         if (!text) return null;
         const rect = el.getBoundingClientRect();
@@ -597,13 +608,27 @@
     const domain = domainBlock ? domainBlock.text : '';
 
     const afterDomain = domainBlock ? postMediaBlocks.slice(postMediaBlocks.indexOf(domainBlock) + 1) : postMediaBlocks;
-    const isHeadlineCandidate = ({ el, text }) => {
-      if (!text || text.length < 3 || text.length > 160) return false;
+
+    const isBoldElement = (el) => {
       const tag = el.tagName.toLowerCase();
       if (/^h[1-6]$/.test(tag) || tag === 'strong' || tag === 'b') return true;
-      return !text.includes('\n') && text.length < 120;
+      const weight = Number.parseInt(window.getComputedStyle(el).fontWeight, 10);
+      return Number.isFinite(weight) && weight >= 600;
     };
-    const headlineBlock = afterDomain.find(isHeadlineCandidate);
+
+    const domainNormalized = normalizeValue(domain);
+    const headlineCandidates = (domainBlock ? afterDomain : postMediaBlocks).filter(({ text }) => Boolean(text));
+    const headlineBlock = headlineCandidates.find(({ el, text }) => {
+      const normalized = normalizeValue(text);
+      if (!normalized || normalized === domainNormalized) return false;
+      const domainLike = DOMAIN_ONLY_PATTERN.test(normalized.replace(/^https?:\/\//, '').replace(/^www\./, ''));
+      if (domainLike) return false;
+      if (hasDomainToken(text)) return false;
+      if (isUppercaseDotToken(text)) return false;
+       // Skip common UI chrome like save/saving buttons
+      if (/^save|saving/i.test(normalized)) return false;
+      return isBoldElement(el);
+    });
     const headline = headlineBlock ? headlineBlock.text : '';
 
     const descriptionBlock = (() => {
