@@ -698,8 +698,7 @@
     'see more',
     'show more',
     'see translation',
-    'continue reading',
-    'see summary details'
+    'continue reading'
   ];
   const EXPAND_SELECTORS = ['[data-ad-preview="see_more_link"]', '[role="button"]', 'button'];
 
@@ -1031,6 +1030,12 @@
     return /ad library|see ad details|library id|inactive|active on/.test(text);
   };
 
+  const isMultiVariantModal = (node) => {
+    if (!node) return false;
+    const text = (node.textContent || '').toLowerCase();
+    return text.includes('this ad has multiple versions') || text.includes('see summary details') || text.includes('ads use this creative');
+  };
+
   const findAnchor = (card) => {
     const detail = card.querySelector('[aria-label*="ad details" i], [href*="/ads/library"], [data-testid*="ad-details"]');
     if (detail) {
@@ -1090,6 +1095,13 @@
   const getCardCandidates = () => {
     const platform = detectPlatform();
     if (platform === 'facebook-ad-library') {
+      // Prefer the opened modal when the user is viewing the multi-version "See ad details" summary
+      const dialogs = Array.from(document.querySelectorAll('div[role="dialog"]')).filter((node) => node.offsetParent);
+      const multiVariantDialog = dialogs.find(isMultiVariantModal);
+      if (multiVariantDialog) {
+        return [multiVariantDialog];
+      }
+
       return Array.from(document.querySelectorAll('div.x1plvlek, div[role="article"], div[data-pagelet^="FeedUnit"]'))
         .filter((node) => node.offsetParent && matchesAdLibraryCard(node));
     }
