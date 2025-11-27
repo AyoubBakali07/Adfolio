@@ -125,6 +125,12 @@ const getHostname = (url) => {
   }
 };
 
+const getAdPageUrl = (item = {}) => {
+  if (item.adLibraryUrl) return item.adLibraryUrl;
+  if (item.adId) return `https://www.facebook.com/ads/library/?id=${item.adId}`;
+  return item.pageUrl || '';
+};
+
 const getParseAdText = () =>
   (typeof window !== 'undefined' && window.SwipekitText && window.SwipekitText.parseAdText) || null;
 
@@ -356,7 +362,8 @@ const createBrandHeader = (item) => {
       retry.textContent = 'Retry capture';
       retry.addEventListener('click', (event) => {
         event.stopPropagation();
-        window.open(item.pageUrl, '_blank', 'noopener');
+        const target = getAdPageUrl(item);
+        if (target) window.open(target, '_blank', 'noopener');
       });
       warning.appendChild(retry);
     }
@@ -507,7 +514,8 @@ const buildDetailActions = (item, mediaEl) => {
   openAd.className = 'detail-btn primary';
   openAd.textContent = 'Open ad page';
   openAd.addEventListener('click', () => {
-    if (item.pageUrl) window.open(item.pageUrl, '_blank', 'noopener');
+    const target = getAdPageUrl(item);
+    if (target) window.open(target, '_blank', 'noopener');
   });
 
   const download = document.createElement('button');

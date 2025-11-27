@@ -130,6 +130,43 @@
 
   let parserWarningShown = false;
 
+  const extractAdIdFromUrl = () => {
+    try {
+      const url = new URL(window.location.href);
+      const candidates = [
+        url.searchParams.get('id'),
+        url.searchParams.get('ad_id'),
+        url.searchParams.get('adid'),
+        url.searchParams.get('adId')
+      ].filter(Boolean);
+
+      for (const candidate of candidates) {
+        if (/^\d{6,}$/.test(candidate)) return candidate;
+      }
+
+      const hashMatch = url.hash.match(/[?&]id=(\d{6,})/);
+      if (hashMatch) return hashMatch[1];
+
+      const pathMatch = url.pathname.match(/ads\/library\/.*?(\d{6,})/);
+      if (pathMatch) return pathMatch[1];
+    } catch (error) {
+      console.warn('Swipekit: failed to read ad id from URL', error);
+    }
+    return null;
+  };
+
+  const extractAdIdFromCard = (card) => {
+    const attrId = card.getAttribute('data-ad-id') || card.dataset?.adId;
+    if (attrId && /^\d{6,}$/.test(attrId)) return attrId;
+
+    const textMatch = (card.textContent || '').match(/\b(?:id|library id)\s*[:#]?\s*([0-9]{6,})/i);
+    if (textMatch) return textMatch[1];
+
+    return null;
+  };
+
+  const detectAdId = (card) => extractAdIdFromUrl() || extractAdIdFromCard(card);
+
   const parseSrcsetDescriptor = (descriptor) => {
     const match = descriptor.trim().match(/(\d+(?:\.\d+)?)(w|x)/i);
     if (!match) return 0;
@@ -431,12 +468,13 @@
     return { brandName, brandLogo };
   };
 
-  const isDurableMediaUrl = (url) => {
+  const isAcceptableMediaUrl = (url) => {
     if (!url) return false;
     const normalized = url.trim().toLowerCase();
     if (!normalized) return false;
-    if (normalized.startsWith('blob:')) return false;
-    if (normalized.startsWith('data:')) return false;
+    if (normalized.startsWith('javascript:')) return false;
+    if (normalized === 'about:blank') return false;
+    // Allow blob/data/HLS sources since many FB/IG videos use them
     return true;
   };
 
@@ -458,11 +496,11 @@
       const urls = new Set();
       [video.currentSrc, video.src].forEach((value) => {
         const normalized = normalizeUrl(value);
-        if (isDurableMediaUrl(normalized)) urls.add(normalized);
+        if (isAcceptableMediaUrl(normalized)) urls.add(normalized);
       });
       video.querySelectorAll('source').forEach((source) => {
         const normalized = normalizeUrl(source.src);
-        if (isDurableMediaUrl(normalized)) urls.add(normalized);
+        if (isAcceptableMediaUrl(normalized)) urls.add(normalized);
       });
       if (urls.size) candidates.push({ urls: Array.from(urls), width, height, area });
     });
@@ -843,10 +881,14 @@
 
     const hasPrimary = typeof primaryText === 'string' && primaryText.replace(/\s/g, '').length > 0;
     const aspectRatio = detectAspectRatio(card);
+    const adId = detectAdId(card);
+    const adLibraryUrl = adId ? `https://www.facebook.com/ads/library/?id=${adId}` : '';
 
     // Structure the data to match Ad Library format
     const payload = {
       id: createId(),
+      adId: adId || null,
+      adLibraryUrl: adLibraryUrl || null,
       platform,
       capturedAt: new Date().toISOString(),
       pageUrl: window.location.href,
@@ -939,8 +981,12 @@
       } catch (error) {
         console.error('Swipekit: capture failed, saving minimal payload', error);
         degradedCapture = true;
+        const adId = detectAdId(card);
+        const adLibraryUrl = adId ? `https://www.facebook.com/ads/library/?id=${adId}` : '';
         payload = {
           id: createId(),
+          adId: adId || null,
+          adLibraryUrl: adLibraryUrl || null,
           platform: detectPlatform(),
           capturedAt: new Date().toISOString(),
           pageUrl: window.location.href,
@@ -1118,8 +1164,8 @@
         return mediaModals;
       }
 
-      // Return empty to disable feed injection as per "only when i click" request
-      return [];
+      // Fallback to feed cards so users can capture directly from the timeline
+      return Array.from(document.querySelectorAll(SELECTORS[platform] || 'div[role="article"]')).filter((node) => node.offsetParent);
     }
 
     const selector = SELECTORS[platform];
