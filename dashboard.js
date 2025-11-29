@@ -21,21 +21,39 @@ let videoObserver = null;
 
 const ensureVideoObserver = () => {
   if (videoObserver) return videoObserver;
-  videoObserver = new IntersectionObserver(() => {}, { threshold: [0, 0.35, 0.6, 1] });
+  videoObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        const video = entry.target;
+        if (!(video instanceof HTMLVideoElement)) return;
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.35) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      });
+    },
+    { threshold: [0, 0.25, 0.35, 0.6, 1] }
+  );
   return videoObserver;
 };
 
 const attachAutoplayBehavior = (video) => {
-  ensureVideoObserver().observe(video);
-  video.addEventListener('mouseenter', () => video.play().catch(() => {}));
-  video.addEventListener('mouseleave', () => video.pause());
+  const observer = ensureVideoObserver();
+  observer.observe(video);
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.controls = false;
+  video.preload = 'metadata';
+  const play = () => video.play().catch(() => {});
+  const pause = () => video.pause();
+  video.addEventListener('mouseenter', play);
+  video.addEventListener('mouseleave', pause);
   video.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (video.paused) {
-      video.play().catch(() => {});
-    } else {
-      video.pause();
-    }
+    if (video.paused) play();
+    else pause();
   });
 };
 
@@ -129,6 +147,13 @@ const formatFullDate = (dateString) => {
 const truncate = (text, limit = 140) => {
   if (!text) return '';
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+};
+
+const formatDuration = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 const getBrandName = (item) => {
@@ -251,19 +276,34 @@ const createMediaElement = (item) => {
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
-    video.controls = true;
+    video.loop = true;
+    video.controls = false;
+    video.preload = 'metadata';
     video.src = videoUrl;
     if (posterSource) video.poster = posterSource;
+    const chip = document.createElement('span');
+    chip.className = 'ad-card-media-chip';
+    chip.textContent = 'Video';
+    const updateDurationChip = () => {
+      const formatted = formatDuration(video.duration);
+      if (formatted) chip.textContent = formatted;
+    };
+    wrapper.appendChild(chip);
     video.addEventListener(
       'loadedmetadata',
       () => {
         if (!wrapper.style.aspectRatio && isValidRatio(video.videoWidth / video.videoHeight)) {
           wrapper.style.aspectRatio = Number((video.videoWidth / video.videoHeight).toFixed(4));
         }
+        updateDurationChip();
         showLoaded();
       },
       { once: true }
     );
+    video.addEventListener('loadeddata', () => {
+      if (!wrapper.classList.contains('loading')) return;
+      showLoaded();
+    }, { once: true });
     video.addEventListener('error', () => {
       if (cachedImage) {
         const img = document.createElement('img');
@@ -276,6 +316,7 @@ const createMediaElement = (item) => {
       }
       showLoaded();
     }, { once: true });
+    attachAutoplayBehavior(video);
     wrapper.appendChild(video);
     return wrapper;
   }
@@ -506,6 +547,9 @@ const buildDetailMedia = (item) => {
 
   if (videoUrl) {
     const video = document.createElement('video');
+    // Force the video to fill the media column even if the poster is tiny
+    video.style.width = '100%';
+    video.style.height = 'auto';
     video.controls = true;
     video.playsInline = true;
     video.src = videoUrl;

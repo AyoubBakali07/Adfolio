@@ -361,16 +361,30 @@ button {
   border-bottom: 1px solid rgba(15, 23, 42, 0.05);
   min-height: 0;
   display: block;
+  border-radius: 22px;
 }
 
 .ad-card-media img,
 .ad-card-media video {
   width: 100%;
-  height: auto;
   display: block;
-  object-fit: contain;
   background: transparent;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ad-card-media img {
+  height: auto;
+  object-fit: contain;
+}
+
+.ad-card-media video {
+  height: 100%;
+  object-fit: cover;
+  background: #0f172a;
+}
+
+.ad-card-media:hover video {
+  transform: scale(1.01);
 }
 
 .ad-card-media.loading img,
@@ -484,6 +498,8 @@ button {
 
 .detail-media img,
 .detail-media video {
+  width: 100%;
+  height: auto;
   max-width: 100%;
   max-height: 80vh;
   object-fit: contain;
