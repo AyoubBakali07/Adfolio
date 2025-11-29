@@ -4,28 +4,82 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Swipekit Lite Dashboard</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="dashboard.css" />
   </head>
-  <body class="app-body">
-    <header class="dash-header">
-      <div>
-        <p class="eyebrow">Swipekit Lite</p>
-        <h1>Saved creatives</h1>
-        <p class="muted">All creatives captured from Facebook and Instagram.</p>
-      </div>
-      <div class="header-actions">
-        <input
-          id="searchInput"
-          type="search"
-          class="search-input"
-          placeholder="Search text, platform, or source URL"
-        />
-        <button id="clearAll" class="btn btn-danger">Clear all saved items</button>
-      </div>
-    </header>
-    <main class="app-main">
-      <section id="cardGrid" class="card-grid"></section>
-    </main>
+  <body>
+    <div class="dashboard-shell">
+      <aside class="dash-sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-logo">S</div>
+          <div>
+            <strong>Swipekit</strong>
+            <p>Lite dashboard</p>
+          </div>
+        </div>
+        <nav class="sidebar-menu">
+          <button class="sidebar-link active">
+            <span>Library</span>
+            <small>All your ads in one place</small>
+          </button>
+          <button class="sidebar-link">
+            <span>Brand Tracker</span>
+            <small>Spy your competition</small>
+          </button>
+          <button class="sidebar-link">
+            <span>Platform Pulse</span>
+            <small>Browse 1M+ ads</small>
+          </button>
+          <button class="sidebar-link">
+            <span>AI Generations</span>
+            <small>Saved AI generations</small>
+          </button>
+        </nav>
+        <div class="sidebar-folders">
+          <div class="sidebar-folders-header">
+            <span>Folders</span>
+            <button class="ghost-btn" type="button" title="Create folder">+</button>
+          </div>
+          <button class="folder-row">
+            <span>Default</span>
+            <span class="folder-count">0</span>
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <button class="sidebar-footer-link">Helpdesk</button>
+          <button class="sidebar-footer-link">Support</button>
+          <p class="sidebar-credits">AI credits 0/30</p>
+        </div>
+      </aside>
+
+      <main class="dash-main">
+        <header class="page-hero">
+          <div>
+            <p class="eyebrow">Library</p>
+            <h1>All your ads, in one place</h1>
+          </div>
+          <button class="clear-library" type="button">Clear library</button>
+        </header>
+
+        <section class="hero-toolbar">
+          <label class="hero-search">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 12h-.79l-.28-.27a6 6 0 10-.71.71l.27.28v.79l4.5 4.5L18 16.5l-4.5-4.5zm-5.5 0a4 4 0 110-8 4 4 0 010 8z"/></svg>
+            <input type="text" placeholder="Search" />
+          </label>
+          <div class="filter-row">
+            <button class="filter-chip" type="button">Tags</button>
+            <button class="filter-chip" type="button">Active ads</button>
+            <button class="filter-chip" type="button">Platform</button>
+            <button class="filter-chip" type="button">Brands</button>
+            <button class="filter-chip" type="button">Asset</button>
+            <button class="filter-chip" type="button">Sort</button>
+            <button class="filter-chip" type="button">Display</button>
+          </div>
+        </section>
+
+        <section id="cardGrid" class="card-grid"></section>
+      </main>
+    </div>
+    <script src="textParsing.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>
